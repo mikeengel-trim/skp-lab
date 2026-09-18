@@ -1,0 +1,26 @@
+{
+  "manifestFormatVersion": "1.0.0",
+  "id": "space-creator",
+  "name": "Space Creator",
+  "description": "Defines a new enclosed space (a named, tagged box) and places it in the model.",
+  "version": "1.0.0",
+  "creator": "",
+  "mainFile": "index.html",
+  "window": {
+    "type": "sidebar",
+    "width": 340,
+    "height": 640
+  },
+  "commands": {
+    "open": {
+      "title": "Space Creator",
+      "description": "Open the Space Creator sidebar."
+    }
+  },
+  "menuItems": [
+    {
+      "type": "item",
+      "commandId": "open"
+    }
+  ]
+}

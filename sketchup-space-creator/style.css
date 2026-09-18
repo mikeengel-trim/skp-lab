@@ -1,0 +1,181 @@
+:root {
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+body {
+  margin: 0;
+  padding: 16px;
+  color: #1a1a1a;
+}
+
+header {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.icon {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #e8f0fe;
+  color: #1a73e8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
+h1 {
+  font-size: 18px;
+  margin: 0 0 4px;
+}
+
+header p {
+  margin: 0;
+  color: #666;
+  font-size: 13px;
+}
+
+section {
+  margin-bottom: 18px;
+}
+
+.field-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #444;
+  margin-bottom: 6px;
+}
+
+input[type="text"],
+select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.dimension-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.dimension-label {
+  flex: none;
+  width: 46px;
+  font-size: 13px;
+  color: #333;
+}
+
+.feet-inches {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+.feet-inches input {
+  flex: 1;
+  width: 0;
+  border: none;
+  font-size: 14px;
+  text-align: right;
+}
+
+.feet-inches input:focus {
+  outline: none;
+}
+
+.unit {
+  color: #888;
+  font-size: 13px;
+}
+
+.hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #888;
+}
+
+.count-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stepper {
+  flex: none;
+  display: flex;
+  align-items: center;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.stepper button {
+  border: none;
+  background: #f2f2f2;
+  width: 32px;
+  height: 32px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.stepper span {
+  display: inline-block;
+  min-width: 28px;
+  text-align: center;
+  font-size: 14px;
+}
+
+#status {
+  font-size: 13px;
+  color: #666;
+}
+
+#status.ok {
+  color: #1a7f37;
+}
+
+#status.error {
+  color: #c92a2a;
+}
+
+footer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.btn {
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  background: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  color: #aaa;
+  cursor: default;
+}
+
+.btn:not(:disabled):hover {
+  background: #f5f5f5;
+}

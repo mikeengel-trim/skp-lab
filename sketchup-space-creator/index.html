@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Space Creator</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.habitat.sketchup.com/dist/sketchup-js-api/v2/sketchup-js-api.min.js"></script>
+</head>
+<body>
+  <header>
+    <div class="icon" aria-hidden="true">&#9633;</div>
+    <div>
+      <h1>Create Space</h1>
+      <p>Define a new enclosed space to add to this model.</p>
+    </div>
+  </header>
+
+  <form id="space-form">
+    <section>
+      <label class="field-label" for="name">Name</label>
+      <input id="name" type="text" placeholder="e.g. Living Room" autocomplete="off">
+    </section>
+
+    <section>
+      <span class="field-label">Dimensions</span>
+
+      <div class="dimension-row">
+        <span class="dimension-label">Width</span>
+        <div class="feet-inches">
+          <input id="width-ft" type="number" value="12" min="0" step="1"><span class="unit">ft</span>
+          <input id="width-in" type="number" value="0" min="0" max="11" step="1"><span class="unit">in</span>
+        </div>
+      </div>
+
+      <div class="dimension-row">
+        <span class="dimension-label">Depth</span>
+        <div class="feet-inches">
+          <input id="depth-ft" type="number" value="10" min="0" step="1"><span class="unit">ft</span>
+          <input id="depth-in" type="number" value="0" min="0" max="11" step="1"><span class="unit">in</span>
+        </div>
+      </div>
+
+      <div class="dimension-row">
+        <span class="dimension-label">Height</span>
+        <div class="feet-inches">
+          <input id="height-ft" type="number" value="8" min="0" step="1"><span class="unit">ft</span>
+          <input id="height-in" type="number" value="0" min="0" max="11" step="1"><span class="unit">in</span>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <label class="field-label" for="tag-select">Tag</label>
+      <select id="tag-select">
+        <option value="">Untagged</option>
+      </select>
+      <p class="hint">Populated from the active model.</p>
+    </section>
+
+    <section class="count-row">
+      <div>
+        <span class="field-label">Count</span>
+        <p class="hint">Number of copies to place</p>
+      </div>
+      <div class="stepper">
+        <button type="button" id="count-down" aria-label="Decrease count">&minus;</button>
+        <span id="count-value">1</span>
+        <button type="button" id="count-up" aria-label="Increase count">+</button>
+      </div>
+    </section>
+
+    <p id="status">Connecting&hellip;</p>
+
+    <footer>
+      <button type="submit" id="place-and-new" class="btn" disabled>Place Space + Create New</button>
+      <button type="button" id="place" class="btn btn-secondary" disabled>Place Space</button>
+    </footer>
+  </form>
+
+  <script src="app.js"></script>
+</body>
+</html>

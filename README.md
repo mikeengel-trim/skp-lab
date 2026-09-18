@@ -10,6 +10,7 @@ at runtime; shared knowledge lives in [docs/](docs).
 | Folder | Extension | Status |
 |---|---|---|
 | [`sketchup-hello-world/`](sketchup-hello-world) | Hello World | Done |
+| [`sketchup-space-creator/`](sketchup-space-creator) | Space Creator | Done |
 
 ## Adding a new extension
 
