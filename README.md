@@ -16,7 +16,8 @@ at runtime; shared knowledge lives in [docs/](docs).
 1. Copy [`_template-extension/`](_template-extension) to a new top-level folder
    named `sketchup-<your-extension-name>`.
 2. Update `manifest.json`: give it a unique `id` and a `name`.
-3. Build it out, then package it as a `.zip` for distribution — see
+3. Build it out. No packaging step — SketchUp loads the extension straight
+   from this GitHub repo, so pushing your commit is the deliverable. See
    [docs/CONVENTIONS.md](docs/CONVENTIONS.md).
 4. Add a row to the table above.
 

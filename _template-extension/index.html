@@ -1,45 +1,17 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Template Extension</title>
-  <link rel="stylesheet" href="https://sketchup-webassets.trimble.com/jsa/sketchup.iframe.css">
-  <style>
-    [hidden] { display: none !important; }
-    body { font-family: sans-serif; padding: 12px; }
-  </style>
+  <script src="https://cdn.habitat.sketchup.com/dist/sketchup-js-api/v2/sketchup-js-api.min.js"></script>
 </head>
 <body>
-  <div id="status">Connecting…</div>
-  <button id="runButton" hidden>Run</button>
+  <h1>Template Extension</h1>
 
-  <script src="https://sketchup-webassets.trimble.com/jsa/Sketchup.js"></script>
-  <script>
-    // All JS must be inline here — a virtual-extension zip install resolves
-    // relative <script src> against the loader's own page, not this file,
-    // so a separate app.js 403s. See ../docs/CONVENTIONS.md.
+  <button id="run" disabled>Run</button>
+  <p id="status">Connecting…</p>
 
-    const statusEl = document.getElementById('status');
-    const runButton = document.getElementById('runButton');
-
-    runButton.addEventListener('click', () => {
-      SketchUpApi.model.performOperation(() => {
-        // model changes go here
-      }, 'Template Operation');
-    });
-
-    // Register SketchUpApi.ui.on() handlers before connect(), then call
-    // connect() directly — no DOMContentLoaded/load listener. The loader's
-    // shell already fired those events before this script ran, so they
-    // will never fire again. See ../docs/CONVENTIONS.md.
-    SketchUpApi.connect()
-      .then(() => {
-        statusEl.textContent = 'Connected';
-        runButton.hidden = false;
-      })
-      .catch((err) => {
-        statusEl.textContent = 'Failed to connect: ' + err;
-      });
-  </script>
+  <script src="app.js"></script>
 </body>
 </html>
