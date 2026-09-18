@@ -55,15 +55,33 @@ function updateButtons() {
 
 form.addEventListener('input', updateButtons);
 
+// Refresh right before the user picks a tag, so one added elsewhere while
+// this panel stayed open still shows up without needing to reopen it.
+tagSelect.addEventListener('focus', () => {
+  void loadTags();
+});
+
 // Loads the model's tags into the dropdown. "Untagged" (no tagRef) is always
 // the first option, since a space doesn't have to carry a tag.
+//
+// TagManager is a point-in-time snapshot, not a live view — it has its own
+// refresh() for exactly this reason — so this has to be called again
+// whenever the list might be stale, not just once at connect.
 async function loadTags() {
+  const previousValue = tagSelect.value;
+
   const model = await SketchUpApi.getActiveModel();
   const tagManager = await model.getTagManager();
 
   tagSelect.replaceChildren(new Option('Untagged', ''));
   for (const tag of tagManager.tags) {
     tagSelect.append(new Option(tag.name, tag.name));
+  }
+
+  // Keep whatever was selected if it still exists; a tag added elsewhere
+  // shouldn't reset a choice the user already made.
+  if (tagManager.findTag(previousValue) !== undefined) {
+    tagSelect.value = previousValue;
   }
 }
 
@@ -139,6 +157,12 @@ form.addEventListener('submit', async event => {
     nameInput.focus();
     updateButtons();
   }
+});
+
+// Register before connecting so reopening/refocusing the sidebar re-runs
+// this and picks up tags added while it was last shown.
+SketchUpApi.ui.on('open', () => {
+  void loadTags();
 });
 
 SketchUpApi.connect()

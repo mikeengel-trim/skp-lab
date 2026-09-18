@@ -14,7 +14,8 @@
   "commands": {
     "open": {
       "title": "Space Creator",
-      "description": "Open the Space Creator sidebar."
+      "description": "Open the Space Creator sidebar.",
+      "icon": "icon.svg"
     }
   },
   "menuItems": [

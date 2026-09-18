@@ -16,12 +16,27 @@ model. Lives in the Sidebar.
 - Placing several copies as one undo step: the loop over `count` and every
   `createGroup`/`createFace`/`facePushPull`/`groupSetName`/`drawingElementSetTag`
   call for it all run inside a single `performOperation()`.
+- Re-fetching `TagManager` rather than caching it: it's a point-in-time
+  snapshot (it has its own `refresh()` for exactly this reason), so
+  `loadTags()` runs again on `tagSelect`'s `focus` event and on
+  `SketchUpApi.ui.on('open', ...)`, not just once at connect. The JSA SDK has
+  no push-based "a tag changed" observer to subscribe to instead, so
+  re-fetching at the moments the list is about to matter is the fix.
 
 ## Assumptions worth checking against the real UI
 
 - **`window.type: "sidebar"`** — not exercised by any of the reference
-  sample-extensions (they use `floating`, `tab`, or `headless`); unverified
-  against the current JSA build, same caveat as `sketchup-hello-world`.
+  sample-extensions (they use `floating`, `tab`, or `headless`); confirmed
+  working against the current JSA build.
+- **`commands.open.icon: "icon.svg"`.** No sample extension or reachable doc
+  demonstrates a manifest icon field at all, so both the key name and where
+  it belongs (per-command vs. top-level `icon`/`icons`) are a guess based on
+  toolbar buttons and menu items both being driven by the same `open`
+  command. `icon.svg` itself is a single-color, `currentColor`-based glyph
+  with no background — standard for a toolbar/menu icon that the host tints
+  and adds button chrome around, unlike the colored badge icon shown in the
+  panel-header mockup (that's a different kind of icon, not this one). If
+  the icon doesn't show up, this is the thing to check first.
 - **All copies place at the origin, stacked.** The mockup's Count field has
   no accompanying spacing/position control, so `count` copies are created at
   identical coordinates for the user to drag apart — unlike the
