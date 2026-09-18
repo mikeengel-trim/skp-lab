@@ -31,3 +31,7 @@ at runtime; shared knowledge lives in [docs/](docs).
 
 See [docs/CONVENTIONS.md](docs/CONVENTIONS.md) for JSA-specific rules learned
 the hard way (packaging, virtual-extension script loading, testing).
+
+## Resources
+
+- [JSA API documentation](https://d38s2ymumupq87.cloudfront.net/sketchup/jsa/latest/) — the SketchUp JavaScript Adapter reference.
