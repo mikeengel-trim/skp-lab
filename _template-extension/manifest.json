@@ -1,0 +1,26 @@
+{
+  "manifestFormatVersion": "1.0.0",
+  "id": "template-extension",
+  "name": "Template Extension",
+  "description": "Starting point for a new JSA extension.",
+  "version": "1.0.0",
+  "creator": "",
+  "mainFile": "index.html",
+  "window": {
+    "type": "floating",
+    "width": 300,
+    "height": 300
+  },
+  "commands": {
+    "open": {
+      "title": "Template Extension",
+      "description": "Open the template extension."
+    }
+  },
+  "menuItems": [
+    {
+      "type": "item",
+      "commandId": "open"
+    }
+  ]
+}

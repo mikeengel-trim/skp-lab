@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Template Extension</title>
+  <link rel="stylesheet" href="https://sketchup-webassets.trimble.com/jsa/sketchup.iframe.css">
+  <style>
+    [hidden] { display: none !important; }
+    body { font-family: sans-serif; padding: 12px; }
+  </style>
+</head>
+<body>
+  <div id="status">Connecting…</div>
+  <button id="runButton" hidden>Run</button>
+
+  <script src="https://sketchup-webassets.trimble.com/jsa/Sketchup.js"></script>
+  <script>
+    // All JS must be inline here — a virtual-extension zip install resolves
+    // relative <script src> against the loader's own page, not this file,
+    // so a separate app.js 403s. See ../docs/CONVENTIONS.md.
+
+    const statusEl = document.getElementById('status');
+    const runButton = document.getElementById('runButton');
+
+    runButton.addEventListener('click', () => {
+      SketchUpApi.model.performOperation(() => {
+        // model changes go here
+      }, 'Template Operation');
+    });
+
+    // Register SketchUpApi.ui.on() handlers before connect(), then call
+    // connect() directly — no DOMContentLoaded/load listener. The loader's
+    // shell already fired those events before this script ran, so they
+    // will never fire again. See ../docs/CONVENTIONS.md.
+    SketchUpApi.connect()
+      .then(() => {
+        statusEl.textContent = 'Connected';
+        runButton.hidden = false;
+      })
+      .catch((err) => {
+        statusEl.textContent = 'Failed to connect: ' + err;
+      });
+  </script>
+</body>
+</html>
