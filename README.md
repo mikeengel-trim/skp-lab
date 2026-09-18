@@ -9,7 +9,7 @@ at runtime; shared knowledge lives in [docs/](docs).
 
 | Folder | Extension | Status |
 |---|---|---|
-| _(none yet — see `_template-extension/` to start one)_ | | |
+| [`sketchup-hello-world/`](sketchup-hello-world) | Hello World | Done |
 
 ## Adding a new extension
 
@@ -26,12 +26,12 @@ at runtime; shared knowledge lives in [docs/](docs).
 - `sketchup-*/` — one folder per extension.
 - `_template-extension/` — starting point for a new extension.
 - `docs/` — conventions and gotchas that apply across extensions.
-- `scripts/` — shared tooling (e.g. zip packaging) usable by any extension.
+- `scripts/` — shared tooling usable by any extension.
 
 ## Conventions
 
 See [docs/CONVENTIONS.md](docs/CONVENTIONS.md) for JSA-specific rules learned
-the hard way (packaging, virtual-extension script loading, testing).
+the hard way (loading, connecting, testing).
 
 ## Resources
 
