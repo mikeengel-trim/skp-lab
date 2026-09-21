@@ -1,7 +1,7 @@
 {
   "manifestFormatVersion": "1.0.0",
   "id": "north-arrow",
-  "name": "North Arrow",
+  "name": "True North Arrow",
   "description": "A compass overlay in the lower-right corner of the viewport that rotates in real time to keep pointing at the model's true north as you orbit. No settings — it opens itself and just works.",
   "version": "1.0.0",
   "creator": "",
@@ -10,15 +10,15 @@
   "loadAtLaunch": true,
   "window": {
     "type": "transparent",
-    "width": 150,
-    "height": 150,
-    "right": 24,
-    "bottom": 24
+    "width": 350,
+    "height": 350,
+    "right": 75,
+    "bottom": 75
   },
   "commands": {
     "open": {
       "title": "North Arrow",
-      "description": "Show the north arrow overlay."
+      "description": "Show the true north arrow as an overlay."
     }
   },
   "menuItems": [
