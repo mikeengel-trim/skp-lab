@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>North Arrow</title>
+  <script src="https://cdn.habitat.sketchup.com/dist/sketchup-js-api/v2/sketchup-js-api.min.js"></script>
+  <style>
+    /* Transparent overlay window: no chrome of our own, just the arrow
+       floating over whatever the 3D viewport shows behind it. */
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      overflow: hidden;
+    }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #arrow {
+      width: 96px;
+      height: 96px;
+      /* White halo so a dark-line icon (the shipped default) stays legible
+         over both light and dark corners of the model. Swapping the PNG
+         for a different-colored icon still gets a halo, just a less
+         necessary one — harmless either way. */
+      filter: drop-shadow(0 0 2px rgba(255,255,255,0.9)) drop-shadow(0 1px 3px rgba(0,0,0,0.35));
+      /* Smooths successive rotation updates from the camera stream into a
+         continuous spin instead of a series of visible jumps. Short enough
+         to stay responsive while orbiting. */
+      transition: transform 90ms linear;
+      transform: rotate(0deg);
+      user-select: none;
+      -webkit-user-select: none;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <img id="arrow" src="north-arrow.png" alt="North arrow" draggable="false">
+
+  <script src="app.js"></script>
+</body>
+</html>

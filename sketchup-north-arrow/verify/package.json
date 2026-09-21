@@ -1,0 +1,8 @@
+{
+  "name": "north-arrow-verify",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node verify.mjs"
+  }
+}
