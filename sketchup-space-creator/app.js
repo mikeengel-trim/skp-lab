@@ -21,6 +21,7 @@ const countUp = document.getElementById('count-up');
 const status = document.getElementById('status');
 const placeAndNewButton = document.getElementById('place-and-new');
 const placeButton = document.getElementById('place');
+const addTagsByThemeButton = document.getElementById('add-tags-by-theme');
 
 let count = 1;
 
@@ -145,6 +146,52 @@ async function placeSpaces() {
 
 placeButton.addEventListener('click', () => {
   void placeSpaces();
+});
+
+// Fetches the theme file bundled next to this extension's own files — works
+// the same way app.js/style.css load, since SketchUp serves this folder
+// straight from the repo (see docs/CONVENTIONS.md).
+async function loadTheme() {
+  const response = await fetch('hospitality_theme.json');
+  if (!response.ok) {
+    throw new Error(`Could not load hospitality_theme.json (${response.status})`);
+  }
+  const theme = await response.json();
+  if (!Array.isArray(theme.hotelDepartments)) {
+    throw new Error('hospitality_theme.json is missing a "hotelDepartments" array.');
+  }
+  return theme.hotelDepartments;
+}
+
+// Creates (or reuses) one tag per department and syncs its color to the
+// theme's hex value. Safe to re-run: existing tags are looked up by name
+// rather than duplicated, and their color is refreshed to match the theme
+// every time, so editing the JSON and re-clicking keeps tags in sync.
+async function addTagsByTheme() {
+  addTagsByThemeButton.disabled = true;
+  try {
+    const departments = await loadTheme();
+    const model = await SketchUpApi.getActiveModel();
+
+    await model.performOperation(async operation => {
+      const tagManager = await model.getTagManager();
+      for (const department of departments) {
+        const tagRef = tagManager.getTagByName(department.name) ?? operation.createTag(department.name);
+        operation.tagSetColor(tagRef, SketchUpApi.Color.fromHex(department.color.hex));
+      }
+    }, 'Add tags by theme');
+
+    await loadTags();
+    report(`Added ${departments.length} tag${departments.length === 1 ? '' : 's'} from theme.`, 'ok');
+  } catch (error) {
+    report(String(error), 'error');
+  } finally {
+    addTagsByThemeButton.disabled = false;
+  }
+}
+
+addTagsByThemeButton.addEventListener('click', () => {
+  void addTagsByTheme();
 });
 
 form.addEventListener('submit', async event => {

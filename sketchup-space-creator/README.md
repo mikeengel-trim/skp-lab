@@ -22,6 +22,16 @@ model. Lives in the Sidebar.
   `SketchUpApi.ui.on('open', ...)`, not just once at connect. The JSA SDK has
   no push-based "a tag changed" observer to subscribe to instead, so
   re-fetching at the moments the list is about to matter is the fix.
+- **"Add Tags by Theme"** reads `hospitality_theme.json` (fetched with a plain
+  relative `fetch()`, since this extension's files are served straight from
+  the repo — no bundling step) and creates one tag per entry in its
+  `hotelDepartments` array, colored from that entry's `color.hex`. Existing
+  tags are looked up by name (`tagManager.getTagByName(name) ?? operation.createTag(name)`)
+  rather than duplicated, and `operation.tagSetColor(tagRef, SketchUpApi.Color.fromHex(hex))`
+  runs on every tag every time, so re-clicking after editing the JSON re-syncs
+  colors safely. Note this uses `getTagByName`, not `findTag` — `findTag` is
+  used elsewhere in this file but doesn't exist on the shipped SDK's
+  `TagManager` class; `getTagByName` is the confirmed-correct method name.
 
 ## Assumptions worth checking against the real UI
 
