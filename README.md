@@ -11,6 +11,7 @@ at runtime; shared knowledge lives in [docs/](docs).
 |---|---|---|
 | [`sketchup-hello-world/`](sketchup-hello-world) | Hello World | Done |
 | [`sketchup-space-creator/`](sketchup-space-creator) | Space Creator | Done |
+| [`sketchup-tag-color-viewer/`](sketchup-tag-color-viewer) | Instance Color Rules | Done |
 
 ## Adding a new extension
 

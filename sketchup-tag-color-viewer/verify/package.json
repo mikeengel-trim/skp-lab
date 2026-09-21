@@ -1,0 +1,12 @@
+{
+  "name": "tag-color-viewer-verify",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node verify.mjs && node verify-dom.mjs"
+  },
+  "devDependencies": {
+    "earcut": "2.2.4",
+    "jsdom": "^24.0.0"
+  }
+}

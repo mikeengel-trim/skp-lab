@@ -1,0 +1,29 @@
+{
+  "manifestFormatVersion": "1.0.0",
+  "id": "tag-color-viewer",
+  "baseUrl": "/",
+  "mainFile": "index.html",
+  "name": "Instance Color Rules",
+  "icon": "tag-color-viewer.svg",
+  "description": "Opens a movable window, live-updating as the model changes, that colors the active model by rules you define against any built-in property or Advanced Attribute (e.g. Status equals 'Installed' → Blue, else Gray), beside the modeling view, without touching materials or styles.",
+  "version": "0.4.0",
+  "creator": "Trimble Engineering",
+  "copyright": "2026 Trimble Inc.",
+  "commands": {
+    "open-tag-color-viewer": {
+      "title": "Instance Color Rules",
+      "description": "Open a live-updating window that colors the model by rules you define.",
+      "icon": "tag-color-viewer.svg"
+    }
+  },
+  "menuItems": [
+    { "type": "item", "commandId": "open-tag-color-viewer" }
+  ],
+  "window": {
+    "type": "floating",
+    "width": 1100,
+    "height": 720,
+    "right": 160,
+    "top": 55
+  }
+}

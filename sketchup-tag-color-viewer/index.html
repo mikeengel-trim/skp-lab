@@ -1,0 +1,1411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Instance Color Rules</title>
+
+  <!--
+    Instance Color Rules — JSA extension rendering the active model in a
+    movable, read-only window, colored by user-defined rules matched
+    against a field YOU pick per rule — any built-in property (Name, Tag,
+    Material, Definition Name, GUID, Description) or any Advanced
+    Attribute set on a component's definition or a specific instance —
+    e.g. "Status equals 'Installed' → Blue, else Gray".
+
+    Updates live: the view re-reads the model automatically whenever
+    SketchUp reports the active model's revision changed (SketchUpApi.
+    observeActiveModel — a real push notification, not polling), debounced
+    so a burst of edits coalesces into one re-render. The "Refresh" button
+    remains as a manual fallback.
+
+    Formerly "Tag Color Viewer" (color by SketchUp tag only, no user
+    input) — see README.md for the full history. That version was itself
+    a JSA rebuild of a Desktop-only Ruby/HtmlDialog prototype at
+    ../SketchUp-open-colorView/ThatOpenTagViewer; the JSA architecture,
+    geometry-reading and Three.js rendering below descend from that
+    rebuild, only the *coloring* mechanism has changed since.
+  -->
+
+  <script type="application/javascript" src="https://d38s2ymumupq87.cloudfront.net/sketchup/jsa/latest/js/Sketchup.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/earcut@2.2.4/dist/earcut.min.js"></script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&display=swap">
+
+  <style>
+    :root {
+      --c-surface: #16191e;
+      --c-surface-raised: #1d2127;
+      --c-surface-panel: #1a1e24;
+      --c-border: #2b3038;
+      --c-text-primary: #eef0f3;
+      --c-text-secondary: #9aa0ab;
+      --c-text-tertiary: #6b7280;
+      --c-accent: #4fa3e3;
+      --c-accent-hover: #6bb4ea;
+      --c-error: #f0576b;
+      --c-error-bg: rgba(240, 87, 107, 0.12);
+      --c-warn: #e3a84f;
+      --c-warn-bg: rgba(227, 168, 79, 0.12);
+      --c-live: #6bd08a;
+      --radius-sm: 4px;
+      --radius-md: 8px;
+      --font-sans: "Open Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    /* One global override rather than patching each hideable element's own
+       selector: an author-level `display` rule on the same element (flex,
+       inline-flex, ...) otherwise silently beats the browser's built-in
+       `[hidden] { display: none }`, since normal author rules always win
+       over the user-agent stylesheet regardless of specificity. */
+    [hidden] { display: none !important; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: var(--font-sans);
+      font-size: 13px;
+      color: var(--c-text-primary);
+      background: var(--c-surface);
+      overflow: hidden;
+    }
+
+    .app-shell { display: flex; height: 100vh; width: 100vw; }
+
+    /* ─── Viewport ──────────────────────────────────────────────────── */
+
+    .viewport { position: relative; flex: 1; min-width: 0; background: var(--c-surface); }
+    .viewport canvas { display: block; width: 100%; height: 100%; }
+
+    .viewport-header {
+      position: absolute; top: 0; left: 0; right: 0;
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.55), transparent);
+      pointer-events: none;
+    }
+    .viewport-header .model-name { font-size: 13px; font-weight: 600; }
+    .viewport-header .status-pill {
+      font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 9999px;
+      background: var(--c-surface-raised); color: var(--c-text-secondary);
+      border: 1px solid var(--c-border);
+    }
+    .viewport-header .status-pill.connected { color: var(--c-live); border-color: rgba(107,208,138,0.4); }
+    .viewport-header .status-pill.error { color: var(--c-error); border-color: rgba(240,87,107,0.4); }
+
+    .live-indicator {
+      display: flex; align-items: center; gap: 5px;
+      font-size: 11px; font-weight: 600; color: var(--c-live);
+    }
+    .live-indicator .live-dot {
+      width: 6px; height: 6px; border-radius: 50%; background: var(--c-live);
+      animation: livePulse 1.6s ease-in-out infinite;
+    }
+    @keyframes livePulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    .banner {
+      position: absolute; top: 44px; left: 14px; right: 14px;
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 10px 12px; border-radius: var(--radius-md);
+      font-size: 12.5px; line-height: 1.5;
+    }
+    .banner.banner-error { background: var(--c-error-bg); border: 1px solid rgba(240,87,107,0.35); color: #ffd7dc; }
+    .banner.banner-warn { background: var(--c-warn-bg); border: 1px solid rgba(227,168,79,0.35); color: #ffe6bf; }
+    .banner .banner-text { flex: 1; }
+    .banner .banner-close { cursor: pointer; color: inherit; opacity: 0.7; font-weight: 700; }
+    .banner .banner-close:hover { opacity: 1; }
+    .banner[hidden] { display: none !important; }
+
+    .viewport-empty {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      color: var(--c-text-tertiary); font-size: 13px; text-align: center; padding: 24px;
+    }
+    .viewport-empty[hidden] { display: none !important; }
+
+    .powered-by {
+      position: absolute; left: 12px; bottom: 10px;
+      display: flex; align-items: center; gap: 4px;
+      padding: 3px 9px; border-radius: 9999px;
+      background: rgba(0, 0, 0, 0.35); color: var(--c-text-tertiary);
+      font-size: 10.5px; letter-spacing: 0.01em;
+      pointer-events: none; /* never steals an OrbitControls drag in the corner */
+    }
+    .powered-by .powered-by-name { color: var(--c-text-secondary); font-weight: 600; }
+
+    /* ─── Rules panel ───────────────────────────────────────────────── */
+
+    .rules-panel {
+      width: 340px; flex: none; display: flex; flex-direction: column;
+      background: var(--c-surface-panel); border-left: 1px solid var(--c-border);
+      transition: width 160ms ease;
+    }
+    .rules-panel.collapsed { width: 44px; }
+    .rules-header {
+      padding: 14px 16px 10px; border-bottom: 1px solid var(--c-border);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .rules-panel.collapsed .rules-header {
+      flex-direction: column; padding: 12px 8px; gap: 10px;
+    }
+    .rules-header h1 { font-size: 14px; font-weight: 700; margin: 0; flex: 1; white-space: nowrap; }
+    .rules-panel.collapsed .rules-header h1 { display: none; }
+    .rules-body .hint { padding: 10px 16px 10px; margin: 0; color: var(--c-text-tertiary); font-size: 11.5px; line-height: 1.5; }
+
+    .btn-icon {
+      width: 28px; height: 28px; border-radius: var(--radius-sm); border: 1px solid var(--c-border);
+      background: var(--c-surface-raised); color: var(--c-text-secondary);
+      display: flex; align-items: center; justify-content: center; cursor: pointer;
+      font-size: 14px; line-height: 1;
+    }
+    .btn-icon:hover { color: var(--c-text-primary); border-color: var(--c-accent); }
+    .btn-icon:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-icon.spinning { animation: spin 0.9s linear infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+    .rules-list { flex: 1; overflow-y: auto; padding: 8px 12px 4px; }
+
+    .rule-row {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+      padding: 8px; margin-bottom: 8px;
+      border: 1px solid var(--c-border); border-radius: var(--radius-md);
+      background: var(--c-surface-raised);
+    }
+    .rule-row .rule-condition { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 1 1 100%; }
+    .rule-row select {
+      flex: none; background: var(--c-surface-panel); color: var(--c-text-primary);
+      border: 1px solid var(--c-border); border-radius: var(--radius-sm);
+      font-size: 12px; padding: 4px 4px; font-family: inherit; max-width: 118px;
+    }
+    .rule-row input.rule-text {
+      flex: 1; min-width: 70px; background: var(--c-surface-panel); color: var(--c-text-primary);
+      border: 1px solid var(--c-border); border-radius: var(--radius-sm);
+      font-size: 12.5px; padding: 5px 7px; font-family: inherit;
+    }
+    .rule-row input.rule-text:focus, .rule-row select:focus { outline: 1px solid var(--c-accent); }
+    .rule-row .rule-meta { display: flex; align-items: center; gap: 8px; flex: 1 1 100%; justify-content: space-between; }
+    .rule-row .rule-meta-left { display: flex; align-items: center; gap: 8px; }
+    .rule-row input[type="checkbox"] { accent-color: var(--c-accent); width: 15px; height: 15px; flex: none; }
+    .rule-row input[type="color"] {
+      width: 26px; height: 22px; padding: 0; border: 1px solid var(--c-border); border-radius: 4px;
+      background: none; cursor: pointer; flex: none;
+    }
+    .rule-count { color: var(--c-text-tertiary); font-size: 11px; flex: none; }
+    .rule-delete {
+      flex: none; background: none; border: none; color: var(--c-text-tertiary);
+      cursor: pointer; font-size: 13px; padding: 2px 4px; line-height: 1;
+    }
+    .rule-delete:hover { color: var(--c-error); }
+
+    .btn-add-rule {
+      width: 100%; margin: 4px 0 10px; padding: 8px; border-radius: var(--radius-sm);
+      border: 1px dashed var(--c-border); background: transparent; color: var(--c-text-secondary);
+      font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+    }
+    .btn-add-rule:hover { color: var(--c-text-primary); border-color: var(--c-accent); }
+
+    .else-row {
+      margin: 0 12px 10px; padding: 8px; border-radius: var(--radius-md);
+      border: 1px solid var(--c-border); background: var(--c-surface-raised);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .else-row .else-label { flex: 1; font-style: italic; color: var(--c-text-secondary); font-size: 12.5px; }
+
+    .rules-footer {
+      padding: 10px 16px; border-top: 1px solid var(--c-border);
+      color: var(--c-text-tertiary); font-size: 11.5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <div class="viewport" id="viewport">
+      <div class="viewport-header">
+        <span class="model-name" id="model-name">Instance Color Rules</span>
+        <span class="status-pill" id="status-pill">Connecting…</span>
+        <span class="live-indicator" id="live-indicator" hidden><span class="live-dot"></span>Live</span>
+      </div>
+
+      <div class="banner banner-error" id="error-banner" hidden>
+        <span class="banner-text" id="error-banner-text"></span>
+        <span class="banner-close" id="error-banner-close">✕</span>
+      </div>
+      <div class="banner banner-warn" id="truncated-banner" hidden>
+        <span class="banner-text" id="truncated-banner-text"></span>
+        <span class="banner-close" id="truncated-banner-close">✕</span>
+      </div>
+
+      <div class="viewport-empty" id="viewport-empty">Connecting to SketchUp…</div>
+
+      <div class="powered-by">Powered by <span class="powered-by-name">Three.js</span></div>
+    </div>
+
+    <div class="rules-panel" id="rules-panel">
+      <div class="rules-header">
+        <button class="btn-icon" id="panel-collapse-btn" title="Collapse panel">»</button>
+        <h1>Color Rules</h1>
+        <button class="btn-icon" id="refresh-btn" title="Re-read the model now" disabled>⟳</button>
+      </div>
+
+      <div class="rules-body" id="rules-body">
+        <p class="hint">Colors every component/group by a field you pick per rule — Name, Tag, Material, Definition Name, GUID, Description, or any Advanced Attribute on the definition or the instance. First matching rule wins; nested instances override their container. Updates live as the model changes.</p>
+
+        <div class="rules-list" id="rules-list"></div>
+        <button class="btn-add-rule" id="add-rule-btn">+ Add rule</button>
+
+        <div class="else-row" id="else-row">
+          <input type="checkbox" id="else-visible" checked title="Show/hide unmatched geometry">
+          <span class="else-label">Else</span>
+          <span class="rule-count" id="else-count">0 faces</span>
+          <input type="color" id="else-color" title="Color for anything no rule matches">
+        </div>
+
+        <div class="rules-footer" id="rules-footer">—</div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+/**
+ * Instance Color Rules — a movable, read-only JSA window that renders the
+ * active model colored by user-defined rules, each matched against a
+ * field the user picks — Name, Tag, Material, Definition Name, GUID,
+ * Description, or any Advanced Attribute set on a component's definition
+ * or a specific instance — beside the modeling view, without touching
+ * materials, tags, styles, attributes or the active scene.
+ *
+ * Inlined directly here, not a separate .js file, and init() at the bottom
+ * of this script runs unconditionally with no DOMContentLoaded/load
+ * listener — the drag-and-drop "virtual extension" loader transplants this
+ * page's nodes into its own already-loaded document, so a relative
+ * <script src> 403s and load/DOMContentLoaded have already fired by the
+ * time a transplanted script runs. Same pattern as every other JSA
+ * extension in this workspace.
+ *
+ * Two-phase pipeline (unchanged in shape from the tag-based version, now
+ * carrying richer per-level data than just a name):
+ *
+ *   collectGeometryByAttributeChain(model) — one JSA walk. For every
+ *     Face, records its triangulated world-space geometry keyed by the
+ *     ordered chain of ancestor "level records" above it (nearest first).
+ *     Each level record captures every field a rule might match against —
+ *     name, tag, material, definition name, guid, description, and every
+ *     Advanced Attribute dictionary/key found on that instance or its
+ *     definition. Knows nothing about rules.
+ *
+ *   resolveRenderBuckets(chainEntries, rules, elseColor) — pure, no JSA
+ *     calls. For each rule, resolveColorForChain pulls whichever field
+ *     that specific rule targets (rule.field) out of each level record and
+ *     tests it. Runs on every rule edit; only "Refresh" or a live-update
+ *     tick re-runs the JSA walk.
+ *
+ * Live updates: SketchUpApi.observeActiveModel gives a real push
+ * notification (confirmed from source, not polling) whenever the active
+ * model's revision changes — i.e. essentially any edit — or the active
+ * model itself switches to a different document. Debounced 500ms so a
+ * burst of edits (e.g. dragging a face) coalesces into one re-walk instead
+ * of re-triangulating on every intermediate tick.
+ */
+
+// ═════════════════════════════════════════════════════════════════════════
+// PURE-LOGIC-BEGIN — no DOM, no Three.js, no JSA calls below this line and
+// above the matching closing marker further down. Kept dependency-free on
+// purpose: verify/*.mjs extracts exactly this region out of this exact
+// file and exercises it in plain Node, so what's tested is never a
+// hand-copied fixture that can drift from what ships.
+// ═════════════════════════════════════════════════════════════════════════
+
+// The fixed fields every level record always carries, regardless of what
+// Advanced Attributes exist in this particular model. Always offered in
+// the field picker, even before any geometry has been read.
+const BUILTIN_FIELDS = [
+  { id: 'name', label: 'Name' },
+  { id: 'tag', label: 'Tag' },
+  { id: 'material', label: 'Material' },
+  { id: 'definitionName', label: 'Definition Name' },
+  { id: 'guid', label: 'GUID' },
+  { id: 'description', label: 'Description' },
+];
+
+// Advanced Attribute field ids are encoded as a single string (so they can
+// be a plain <select> option value and a plain JSON-serializable
+// rule.field) rather than kept as a {dict,key} pair everywhere — each part
+// is URI-encoded before joining on "::" specifically so a dictionary or
+// key name that happens to contain "::" itself can never be confused with
+// the separator (encodeURIComponent turns any literal ":" into "%3A").
+function encodeAttributeFieldId(dict, key) {
+  return `attribute::${encodeURIComponent(dict)}::${encodeURIComponent(key)}`;
+}
+function decodeAttributeFieldId(fieldId) {
+  if (typeof fieldId !== 'string' || !fieldId.startsWith('attribute::')) return null;
+  const parts = fieldId.split('::');
+  if (parts.length !== 3) return null;
+  return { dict: decodeURIComponent(parts[1]), key: decodeURIComponent(parts[2]) };
+}
+function attributeFieldLabel(dict, key) {
+  return `${dict} → ${key}`;
+}
+
+// Pulls one field's value out of a level record for matching. Returns
+// null for a field the level simply doesn't have (no such attribute, no
+// tag assigned, etc.) — ruleMatches already treats null as "never
+// matches", so a rule targeting a field most levels don't have just quietly
+// never fires for those levels, rather than erroring.
+function getFieldValue(level, fieldId) {
+  if (!level) return null;
+  switch (fieldId) {
+    case 'name': return level.name;
+    case 'tag': return level.tagName;
+    case 'material': return level.materialName;
+    case 'definitionName': return level.definitionName;
+    case 'guid': return level.guid;
+    case 'description': return level.description;
+    default: {
+      const attr = decodeAttributeFieldId(fieldId);
+      if (!attr) return null;
+      return level.attributes?.[attr.dict]?.[attr.key] ?? null;
+    }
+  }
+}
+
+// A rule: { id, field, matchType: 'contains'|'equals'|'startsWith'|'endsWith', text, color, visible }
+// `value` is whatever getFieldValue returned — not necessarily a string
+// (an Advanced Attribute can hold a number, boolean, etc.), so it's
+// coerced to a string before matching rather than assumed to already be
+// one.
+function ruleMatches(value, rule) {
+  if (value === null || value === undefined || !rule || !rule.text) return false;
+  const haystack = String(value).toLowerCase();
+  const needle = rule.text.toLowerCase();
+  switch (rule.matchType) {
+    case 'equals': return haystack === needle;
+    case 'startsWith': return haystack.startsWith(needle);
+    case 'endsWith': return haystack.endsWith(needle);
+    case 'contains':
+    default: return haystack.includes(needle);
+  }
+}
+
+// Resolves the color for one ancestor chain of level records (nearest-
+// containing-instance first) against the current rule list. A match
+// closer to the face overrides one further up the tree — e.g. a "Fixture
+// - Installed" assembly colors Blue, but a "Bracket - Removed" sub-part
+// nested inside it still overrides to its own rule's color. Rules are
+// tried in list order at each chain level, so of the rules that match at
+// the nearest matching level, the first one in the list wins. Each rule
+// independently decides which field of a level it looks at via
+// rule.field, via getFieldValue.
+//
+// @returns { color, ruleId } — both null when nothing in the chain
+//   matched any rule; the caller falls back to the else color.
+function resolveColorForChain(chain, rules) {
+  for (const level of chain) {
+    for (const rule of rules) {
+      const value = getFieldValue(level, rule.field);
+      if (ruleMatches(value, rule)) return { color: rule.color, ruleId: rule.id };
+    }
+  }
+  return { color: null, ruleId: null };
+}
+
+// Builds the chain passed down to a container's children: its own level
+// record goes to the front — nearest-first — so resolveColorForChain's
+// "closer wins" walk is a plain left-to-right scan. Unlike the earlier
+// name-only version, every level is always recorded (never skipped): a
+// level with a blank Name can still carry a meaningful Tag, Material, or
+// Advanced Attribute a rule might target.
+function prependLevel(parentChain, level) {
+  return [level, ...parentChain];
+}
+
+// Flattens an SDK Attributes object (real shape, confirmed from source:
+// `.allDictionaries` is an array of `{name, values: Map}`) into a plain
+// nested object: { [dictionaryName]: { [key]: value } }. Also accepts a
+// plain mock shaped the same way, which is what makes this testable here
+// without a live JSA connection.
+function attributesToPlainObject(attributes) {
+  const result = {};
+  const dictionaries = attributes?.allDictionaries || [];
+  for (const dict of dictionaries) {
+    const values = {};
+    (dict.values || new Map()).forEach((v, k) => { values[k] = v; });
+    result[dict.name] = values;
+  }
+  return result;
+}
+
+// Merges two already-flattened attribute objects, override winning on a
+// key collision. Used to combine a ComponentInstance's own Advanced
+// Attributes with its ComponentDefinition's (definition-level custom
+// attributes act as the component's "template" defaults; an instance can
+// still carry its own on top).
+function mergeAttributeObjects(base, override) {
+  const merged = { ...base };
+  for (const [dictName, values] of Object.entries(override || {})) {
+    merged[dictName] = { ...(merged[dictName] || {}), ...values };
+  }
+  return merged;
+}
+
+// Accumulates every distinct Advanced Attribute dictionary/key pair seen
+// anywhere in the model into `discovered` (a Map keyed by the encoded
+// field id) so the rule editor's field picker can offer it — in addition
+// to the always-available BUILTIN_FIELDS. Mutates `discovered` in place
+// (a Map, not returned) since it's threaded through the whole model walk
+// accumulating as it goes; still a pure function of its two arguments in
+// the sense that matters here — no DOM/JSA access.
+function recordDiscoveredFields(discovered, attributesObj) {
+  for (const [dictName, values] of Object.entries(attributesObj || {})) {
+    for (const key of Object.keys(values)) {
+      const id = encodeAttributeFieldId(dictName, key);
+      if (!discovered.has(id)) discovered.set(id, { id, label: attributeFieldLabel(dictName, key) });
+    }
+  }
+}
+
+// Regroups already-read geometry (chainEntries, from
+// collectGeometryByAttributeChain) by matched rule, without touching the
+// JSA API — this is what makes editing a rule recolor instantly. Grouped
+// by *rule identity* (or the literal string 'else'), not by resolved
+// color, specifically so two rules that happen to share a color still get
+// independent face counts and an independent visibility toggle — merging
+// by color would silently fuse their "hide this rule" checkboxes.
+//
+// @param chainEntries — [{ chain: object[], bucket: TriangleBucket }]
+// @param rules — current rule list
+// @param elseColor — fallback color for a chain that matches nothing
+// @returns Map<ruleId | 'else', { key, color, faceCount, parts: number[][] }>
+//   `parts` is an array of each contributing bucket's flat position array
+//   (Three.js axes, 9 numbers/triangle) — left unflattened here so this
+//   function never needs to copy or concatenate potentially very large
+//   arrays; the caller flattens once into a single typed array per group.
+function resolveRenderBuckets(chainEntries, rules, elseColor) {
+  const groups = new Map();
+  for (const { chain, bucket } of chainEntries) {
+    const resolved = resolveColorForChain(chain, rules);
+    const key = resolved.ruleId || 'else';
+    const color = resolved.color || elseColor;
+    if (!groups.has(key)) groups.set(key, { key, color, faceCount: 0, parts: [] });
+    const target = groups.get(key);
+    target.color = color; // always the rule's current color, even if it changed since the last resolve
+    target.faceCount += bucket.faceCount;
+    if (bucket.positions.length > 0) target.parts.push(bucket.positions);
+  }
+  return groups;
+}
+
+function crossVec(a, b) {
+  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+}
+function dotVec(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+function lengthVec(a) { return Math.hypot(a[0], a[1], a[2]); }
+function normalizeVec(a) {
+  const len = lengthVec(a);
+  return len > 1e-12 ? [a[0] / len, a[1] / len, a[2] / len] : [0, 0, 0];
+}
+
+const IDENTITY_MATRIX = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+
+// Confirmed directly from the shipped JSA SDK (Sketchup.js, static
+// Transformation.applyToPoint) rather than guessed: a Transformation keeps
+// its state as a flat 16-number array, row-major 4-tuples, translation at
+// indices 12-14 (Transformation.translation([x,y,z]) builds
+// [1,0,0,0, 0,1,0,0, 0,0,1,0, x,y,z,1]). Reimplemented here rather than
+// calling the SDK's own instance method (`.applyTo(point)`), because that
+// method type-checks for a real Point3d/Vector3d instance internally and
+// this file only ever has plain {x,y,z} data on hand from Vertex.
+function applyToPoint(m, p) {
+  return [
+    p[0] * m[0] + p[1] * m[4] + p[2] * m[8]  + m[12],
+    p[0] * m[1] + p[1] * m[5] + p[2] * m[9]  + m[13],
+    p[0] * m[2] + p[1] * m[6] + p[2] * m[10] + m[14],
+  ];
+}
+
+// A Transformation instance keeps its 16 numbers on a plain (not truly
+// private — no `#` field) `_m` property, confirmed by reading the class
+// body directly. Falls back to identity rather than throwing if a future
+// SDK version changes that internal shape, since it's the one piece of
+// this file with no documented public accessor to lean on instead.
+function matrixOf(transformation) {
+  if (!transformation) return IDENTITY_MATRIX;
+  if (Array.isArray(transformation) && transformation.length === 16) return transformation;
+  if (Array.isArray(transformation._m) && transformation._m.length === 16) return transformation._m;
+  return IDENTITY_MATRIX;
+}
+
+// Applies a stack of ancestor transforms to a point that starts out in the
+// *innermost* container's local space — innermost transform first, walking
+// out to the model root. Equivalent to composing the matrices root-to-leaf
+// and applying once, but never needs to build a composed matrix, since
+// Transformation exposes no multiply().
+function worldPoint(localPoint, transformStack) {
+  let p = localPoint;
+  for (let i = transformStack.length - 1; i >= 0; i--) {
+    p = applyToPoint(transformStack[i], p);
+  }
+  return p;
+}
+
+function buildBasis(normal) {
+  const arbitrary = Math.abs(normal[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+  const u = normalizeVec(crossVec(arbitrary, normal));
+  const v = crossVec(normal, u);
+  return { u, v };
+}
+
+// Triangulates one face (outer loop + holes, arbitrary concave shape) by
+// projecting into the face's own 2D plane and running earcut — a fan
+// triangulation would silently produce garbage for a concave face or one
+// with a hole, and both are common in real architectural models.
+// Triangulation happens in *local* space, using the face's own local
+// normal, so a non-uniform-scale ancestor transform can never distort the
+// projection; only the final positions get mapped through worldPoint().
+//
+// @param face — { normal: [x,y,z], outerLoop: [{x,y,z}], holes: [[{x,y,z}]] }
+//   (already-resolved plain points — see collectGeometryByAttributeChain
+//   below, the only caller, which does that resolution)
+// @returns flat array of {x,y,z} points, 3 per triangle, in *local* space.
+function triangulateFaceLocal(face) {
+  const rings = [face.outerLoop, ...face.holes];
+  if (rings[0].length < 3) return [];
+  const { u, v } = buildBasis(face.normal);
+  const nested2d = rings.map((ring) =>
+    ring.map((pt) => [dotVec([pt.x, pt.y, pt.z], u), dotVec([pt.x, pt.y, pt.z], v)]));
+  const { vertices, holes, dimensions } = earcut.flatten(nested2d);
+  const triangleIndices = earcut(vertices, holes, dimensions);
+  const flatPoints = rings.flat(); // same ring order earcut.flatten walked
+  const trianglePoints = [];
+  for (const index of triangleIndices) {
+    const pt = flatPoints[index];
+    trianglePoints.push({ x: pt.x, y: pt.y, z: pt.z });
+  }
+  return trianglePoints;
+}
+
+// SketchUp-inches world coordinates (Z-up) to Three.js (Y-up). No unit
+// (inches→meters) conversion is needed: Three.js has no notion of a
+// physical unit, only relative scale, and the camera/grid are sized from
+// the model's own bounding radius instead of an assumed real-world
+// distance.
+function toThreeAxes(p) {
+  return [p[0], p[2], -p[1]];
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// PURE-LOGIC-END
+// ═════════════════════════════════════════════════════════════════════════
+
+// ─── Model walk — talks to the JSA API ─────────────────────────────────
+//
+// Read-only: every call below is a getter or a container's .entities.get()
+// accessor. There is no op.* call anywhere in this file, so materials,
+// tags, styles, attributes and the active scene are never touched.
+//
+// Only Model, Group and ComponentDefinition can hold children — a
+// ComponentInstance itself has none of that; you resolve its .definition
+// via model.findEntity() and walk the definition instead. Confirmed
+// against the real SDK by the Model GraphQL Inspector extension in this
+// workspace (see its README/memory) — the same walk shape is reused here,
+// extended to also collect Face geometry and to walk a shared definition
+// once *per instance* rather than once total, since every instance needs
+// its own copy of the definition's geometry, positioned by its own
+// transform (unlike that extension's job of listing unique instances,
+// where a shared definition only needed visiting once).
+
+const MAX_TRIANGLES = 1_500_000;
+const MAX_TREE_DEPTH = 64; // guards a pathological/cyclic nesting chain, not a real modeling limit
+const MAX_DEFINITION_VISITS = 5000; // same guard, for a shared definition entered many times
+
+function entityTypeName(entity) {
+  return entity?.constructor?.name || 'Entity';
+}
+
+class TriangleBucket {
+  constructor() {
+    this.positions = []; // flat, Three.js axes, 9 numbers per triangle
+    this.faceCount = 0;
+  }
+  addTriangle(aLocal, bLocal, cLocal, transformStack) {
+    for (const local of [aLocal, bLocal, cLocal]) {
+      const world = worldPoint([local.x, local.y, local.z], transformStack);
+      const [x, y, z] = toThreeAxes(world);
+      this.positions.push(x, y, z);
+    }
+  }
+}
+
+// One walk of the live model. Deliberately knows nothing about rules —
+// every face's triangles are bucketed purely by the chain of ancestor
+// level records above it, so a rule edit never needs to re-run this.
+//
+// tagById/materials are fetched once per walk (not per entity) and used
+// to resolve each level's tagId/materialId into a display name — Tag and
+// Material are exposed as filterable fields alongside Name, even though
+// they're no longer *how* coloring works (that pivot happened earlier;
+// see README "From tags to name rules").
+async function collectGeometryByAttributeChain(model) {
+  const tagManager = await model.getTagManager();
+  const tagById = new Map((tagManager.tags || []).map((t) => [t.id, t]));
+  const materials = await model.getMaterials();
+
+  const chainBuckets = new Map(); // JSON(chain) -> { chain, bucket }
+  const bucketFor = (chain) => {
+    const key = JSON.stringify(chain);
+    if (!chainBuckets.has(key)) chainBuckets.set(key, { chain, bucket: new TriangleBucket() });
+    return chainBuckets.get(key).bucket;
+  };
+
+  const discoveredFields = new Map();
+
+  let triangleCount = 0;
+  let truncated = false;
+  const definitionVisitCounts = new Map();
+
+  function buildLevel({ name, tagId, materialId, guid, description, definitionName, attributes }) {
+    recordDiscoveredFields(discoveredFields, attributes);
+    return {
+      name: name || null,
+      tagName: tagId != null ? (tagById.get(tagId)?.name ?? null) : null,
+      materialName: materialId != null ? (materials.findMaterialById(materialId)?.name ?? null) : null,
+      definitionName: definitionName || null,
+      guid: guid || null,
+      description: description || null,
+      attributes,
+    };
+  }
+
+  async function walk(container, transformStack, chain, depth) {
+    if (truncated || depth > MAX_TREE_DEPTH) return;
+    const children = await container.entities.get();
+    for (const child of children) {
+      if (truncated) return;
+      const typeName = entityTypeName(child);
+
+      if (typeName === 'Face') {
+        const bucket = bucketFor(chain);
+        bucket.faceCount += 1;
+
+        const localFace = {
+          normal: child.normal,
+          outerLoop: child.outerLoop.map((edgeUse) => edgeUse.start),
+          holes: child.holes.map((loop) => loop.map((edgeUse) => edgeUse.start)),
+        };
+        const localTriPoints = triangulateFaceLocal(localFace);
+        for (let i = 0; i + 2 < localTriPoints.length; i += 3) {
+          if (triangleCount >= MAX_TRIANGLES) { truncated = true; return; }
+          bucket.addTriangle(localTriPoints[i], localTriPoints[i + 1], localTriPoints[i + 2], transformStack);
+          triangleCount += 1;
+        }
+        continue;
+      }
+
+      if (typeName === 'Group') {
+        const level = buildLevel({
+          name: child.name,
+          tagId: child.tagId,
+          materialId: child.materialId,
+          guid: child.guid,
+          description: child.description,
+          definitionName: null, // a Group has no shared ComponentDefinition
+          attributes: attributesToPlainObject(child.attributes),
+        });
+        const childChain = prependLevel(chain, level);
+        // Confirmed from the shipped SDK source: Group's local→parent
+        // matrix is exposed as `.transform`, not `.transformation` — the
+        // property JSA_API_COMPLETE.md documents (Group/ComponentInstance
+        // constructors literally read `e.transform` off the wire payload
+        // and assign `this.transform = ...`). Reading `.transformation`
+        // here silently returned undefined -> matrixOf() fell back to
+        // identity for every instance -> everything rendered stacked at
+        // the local origin instead of its real placement.
+        transformStack.push(matrixOf(child.transform));
+        await walk(child, transformStack, childChain, depth + 1);
+        transformStack.pop();
+        continue;
+      }
+
+      if (typeName === 'ComponentInstance') {
+        const definition = await model.findEntity(child.definition);
+        if (!definition) continue;
+        const visits = definitionVisitCounts.get(definition.id) || 0;
+        // A shared definition legitimately gets walked once per placement
+        // — this only guards a genuinely pathological/cyclic reference
+        // chain, not normal component reuse.
+        if (visits > MAX_DEFINITION_VISITS) continue;
+        definitionVisitCounts.set(definition.id, visits + 1);
+
+        // Definition-level Advanced Attributes act as the component's
+        // "template" defaults; an instance's own attributes (rare, but
+        // real) override them on a key collision.
+        const definitionAttrs = attributesToPlainObject(definition.attributes);
+        const instanceAttrs = attributesToPlainObject(child.attributes);
+        const level = buildLevel({
+          name: child.name,
+          tagId: child.tagId,
+          materialId: child.materialId,
+          guid: child.guid,
+          description: child.description,
+          definitionName: definition.name,
+          attributes: mergeAttributeObjects(definitionAttrs, instanceAttrs),
+        });
+        const childChain = prependLevel(chain, level);
+        transformStack.push(matrixOf(child.transform)); // see the Group branch above — `.transform`, not `.transformation`
+        await walk(definition, transformStack, childChain, depth + 1);
+        transformStack.pop();
+        continue;
+      }
+
+      // Edges, curves, construction geometry, text, images: no geometry
+      // contribution — faces only.
+    }
+  }
+
+  await walk(model, [], [], 0);
+  return {
+    chainEntries: [...chainBuckets.values()],
+    truncated,
+    triangleCount,
+    availableFields: [...discoveredFields.values()],
+  };
+}
+
+// ─── Three.js scene ─────────────────────────────────────────────────────
+
+let renderer, scene, camera, controls, resizeObserver;
+let ruleMeshes = new Map(); // key ('else' or a rule id) -> THREE.Mesh
+
+function initScene() {
+  const viewport = document.getElementById('viewport');
+  const canvas = document.createElement('canvas');
+  viewport.appendChild(canvas);
+
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x16191e);
+
+  camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1e7);
+  camera.up.set(0, 1, 0);
+
+  controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x22252b, 0.9));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.85);
+  sun.position.set(1, 1.6, 0.8);
+  scene.add(sun);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.25);
+  fill.position.set(-1, 0.6, -0.6);
+  scene.add(fill);
+
+  resizeObserver = new ResizeObserver(() => resizeRenderer());
+  resizeObserver.observe(viewport);
+  resizeRenderer();
+
+  requestAnimationFrame(animate);
+}
+
+function resizeRenderer() {
+  const viewport = document.getElementById('viewport');
+  const width = Math.max(1, viewport.clientWidth);
+  const height = Math.max(1, viewport.clientHeight);
+  renderer.setSize(width, height, false);
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+function clearSceneGeometry() {
+  for (const mesh of ruleMeshes.values()) {
+    scene.remove(mesh);
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+  }
+  ruleMeshes = new Map();
+  const existingGrid = scene.getObjectByName('floor-grid');
+  if (existingGrid) scene.remove(existingGrid);
+}
+
+function flattenParts(parts) {
+  const totalLength = parts.reduce((sum, p) => sum + p.length, 0);
+  const out = new Float32Array(totalLength);
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
+}
+
+// Builds one Mesh per rule group (plus 'else') and frames the camera on
+// the combined bounding box, but only on the FIRST successful build (see
+// hasFramedCamera) — a live update mid-orbit shouldn't yank the camera
+// back to a default framing every time the model revision ticks.
+// Non-indexed geometry (3 unique vertices per triangle, no shared
+// indices) so computeVertexNormals() produces correct flat per-face
+// normals.
+let hasFramedCamera = false;
+
+function buildScene(groupBuckets, visibility) {
+  clearSceneGeometry();
+
+  const overallMin = [Infinity, Infinity, Infinity];
+  const overallMax = [-Infinity, -Infinity, -Infinity];
+
+  for (const [key, group] of groupBuckets) {
+    if (group.parts.length === 0) continue;
+    const positions = flattenParts(group.parts);
+    for (let i = 0; i < positions.length; i += 3) {
+      overallMin[0] = Math.min(overallMin[0], positions[i]);
+      overallMin[1] = Math.min(overallMin[1], positions[i + 1]);
+      overallMin[2] = Math.min(overallMin[2], positions[i + 2]);
+      overallMax[0] = Math.max(overallMax[0], positions[i]);
+      overallMax[1] = Math.max(overallMax[1], positions[i + 1]);
+      overallMax[2] = Math.max(overallMax[2], positions[i + 2]);
+    }
+
+    const bufferGeometry = new THREE.BufferGeometry();
+    bufferGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    bufferGeometry.computeVertexNormals();
+
+    const material = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(group.color),
+      roughness: 0.88,
+      metalness: 0.0,
+      side: THREE.DoubleSide,
+    });
+
+    const mesh = new THREE.Mesh(bufferGeometry, material);
+    mesh.visible = visibility.get(key) !== false;
+    scene.add(mesh);
+    ruleMeshes.set(key, mesh);
+  }
+
+  if (Number.isFinite(overallMin[0]) && !hasFramedCamera) {
+    frameCamera(overallMin, overallMax);
+    hasFramedCamera = true;
+  }
+  if (Number.isFinite(overallMin[0])) {
+    addFloorGrid(overallMin, overallMax);
+  }
+}
+
+function frameCamera(min, max) {
+  const center = new THREE.Vector3((min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2);
+  const size = new THREE.Vector3(max[0] - min[0], max[1] - min[1], max[2] - min[2]);
+  const radius = Math.max(1, size.length() / 2);
+
+  camera.near = radius / 1000;
+  camera.far = radius * 100;
+  camera.updateProjectionMatrix();
+
+  const distance = radius / Math.sin((camera.fov * Math.PI) / 360);
+  camera.position.set(center.x + distance * 0.6, center.y + distance * 0.45, center.z + distance * 0.6);
+  controls.target.copy(center);
+  controls.minDistance = radius / 100;
+  controls.maxDistance = radius * 20;
+  controls.update();
+}
+
+function addFloorGrid(min, max) {
+  const size = Math.max(max[0] - min[0], max[2] - min[2], 1);
+  const grid = new THREE.GridHelper(size * 1.6, 24, 0x3a4048, 0x262b32);
+  grid.name = 'floor-grid';
+  grid.position.y = min[1];
+  scene.add(grid);
+}
+
+// ─── Rules state, persistence, UI ───────────────────────────────────────
+
+const el = (id) => document.getElementById(id);
+const STORAGE_KEY = 'instance-color-rules:v1';
+
+// Not crypto.randomUUID(): confirmed by testing this page in a browser
+// that it throws in some embedding contexts (e.g. an opaque/sandboxed
+// origin), which is exactly the kind of "loads but does nothing, no
+// visible error in the UI" failure this workspace's JSA extensions have
+// been bitten by before (see feedback_browser_console_first_for_fetch_
+// failures). A rule id only needs to be unique within one session's
+// in-memory list, so a counter is both simpler and has no availability
+// risk at all.
+let ruleIdCounter = 0;
+function makeRuleId() {
+  ruleIdCounter += 1;
+  return `rule-${Date.now().toString(36)}-${ruleIdCounter}`;
+}
+
+function defaultState() {
+  return {
+    rules: [
+      { id: makeRuleId(), field: 'name', matchType: 'contains', text: 'Installed', color: '#2f6fed', visible: true },
+    ],
+    elseColor: '#9aa0ab',
+    elseVisible: true,
+  };
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return defaultState();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed.rules)) return defaultState();
+    // Backward-compatible with rules saved before the field picker existed
+    // — they only ever matched on Name, so that's the correct default.
+    parsed.rules.forEach((r) => { if (!r.field) r.field = 'name'; });
+    return parsed;
+  } catch (e) {
+    console.warn('[Instance Color Rules] could not read saved rules, using defaults', e);
+    return defaultState();
+  }
+}
+
+function saveState() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ rules, elseColor, elseVisible }));
+  } catch (e) {
+    console.warn('[Instance Color Rules] could not save rules', e);
+  }
+}
+
+let { rules, elseColor, elseVisible } = loadState();
+let lastChainEntries = null; // cached raw geometry from the last model read — see collectGeometryByAttributeChain
+let recolorTimer = null;
+
+// Grows over the session as collectGeometryByAttributeChain discovers
+// Advanced Attributes actually present in the model. Seeded with the
+// always-available built-ins so the field picker is never empty, even
+// before the first successful read.
+let knownFields = [...BUILTIN_FIELDS];
+
+function showError(message) {
+  el('error-banner-text').textContent = message;
+  el('error-banner').hidden = false;
+}
+function clearError() { el('error-banner').hidden = true; }
+
+function showTruncated(message) {
+  el('truncated-banner-text').textContent = message;
+  el('truncated-banner').hidden = false;
+}
+function clearTruncated() { el('truncated-banner').hidden = true; }
+
+function setStatus(text, kind) {
+  const pill = el('status-pill');
+  pill.textContent = text;
+  pill.className = 'status-pill' + (kind ? ' ' + kind : '');
+}
+
+function currentVisibility() {
+  const map = new Map();
+  for (const rule of rules) map.set(rule.id, rule.visible !== false);
+  map.set('else', elseVisible !== false);
+  return map;
+}
+
+// Rebuilds one <select>'s options from knownFields, grouped Built-in vs.
+// Advanced Attributes. Safe to call often — a <select>'s options can be
+// replaced without disrupting the user the way rebuilding a focused text
+// input would.
+function populateFieldSelect(select) {
+  select.innerHTML = '';
+  const builtinGroup = document.createElement('optgroup');
+  builtinGroup.label = 'Built-in';
+  for (const f of BUILTIN_FIELDS) {
+    const opt = document.createElement('option');
+    opt.value = f.id;
+    opt.textContent = f.label;
+    builtinGroup.appendChild(opt);
+  }
+  select.appendChild(builtinGroup);
+
+  const attrFields = knownFields.filter((f) => f.id.startsWith('attribute::'));
+  if (attrFields.length > 0) {
+    const attrGroup = document.createElement('optgroup');
+    attrGroup.label = 'Advanced Attributes';
+    for (const f of attrFields) {
+      const opt = document.createElement('option');
+      opt.value = f.id;
+      opt.textContent = f.label;
+      attrGroup.appendChild(opt);
+    }
+    select.appendChild(attrGroup);
+  }
+}
+
+// Merges newly-discovered Advanced Attribute fields into knownFields and,
+// only if anything new actually showed up, refreshes every existing rule
+// row's field picker in place — preserving each one's current selection.
+// Called after every successful model read (including live-update ticks),
+// so this has to be cheap and non-disruptive in the common case where
+// nothing new was found (the early return below).
+function updateFieldOptions(discoveredFields) {
+  let added = false;
+  for (const f of discoveredFields) {
+    if (!knownFields.some((k) => k.id === f.id)) {
+      knownFields.push(f);
+      added = true;
+    }
+  }
+  if (!added) return;
+  knownFields.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
+  document.querySelectorAll('.rule-field').forEach((select) => {
+    const currentValue = select.value;
+    populateFieldSelect(select);
+    select.value = knownFields.some((f) => f.id === currentValue) ? currentValue : 'name';
+  });
+}
+
+// Rebuilds every rule row from scratch — call only on structural changes
+// (add/remove rule, initial load), never on a keystroke: recreating the
+// currently-focused input would drop focus/cursor position mid-edit.
+function renderRulesList() {
+  const list = el('rules-list');
+  list.innerHTML = '';
+
+  for (const rule of rules) {
+    const row = document.createElement('div');
+    row.className = 'rule-row';
+    row.dataset.ruleId = rule.id;
+
+    const condition = document.createElement('div');
+    condition.className = 'rule-condition';
+
+    const field = document.createElement('select');
+    field.className = 'rule-field';
+    populateFieldSelect(field);
+    field.value = knownFields.some((f) => f.id === rule.field) ? rule.field : 'name';
+    field.addEventListener('change', () => {
+      rule.field = field.value;
+      scheduleRecolor();
+    });
+
+    const matchType = document.createElement('select');
+    matchType.className = 'rule-match-type';
+    for (const [value, text] of [
+      ['contains', 'Contains'], ['equals', 'Equals'],
+      ['startsWith', 'Starts with'], ['endsWith', 'Ends with'],
+    ]) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = text;
+      if (rule.matchType === value) opt.selected = true;
+      matchType.appendChild(opt);
+    }
+    matchType.addEventListener('change', () => {
+      rule.matchType = matchType.value;
+      scheduleRecolor();
+    });
+
+    const text = document.createElement('input');
+    text.type = 'text';
+    text.className = 'rule-text';
+    text.placeholder = 'e.g. Installed';
+    text.value = rule.text;
+    text.addEventListener('input', () => {
+      rule.text = text.value;
+      scheduleRecolor();
+    });
+
+    condition.append(field, matchType, text);
+
+    const meta = document.createElement('div');
+    meta.className = 'rule-meta';
+
+    const metaLeft = document.createElement('div');
+    metaLeft.className = 'rule-meta-left';
+
+    const visible = document.createElement('input');
+    visible.type = 'checkbox';
+    visible.checked = rule.visible !== false;
+    visible.title = 'Show/hide matching geometry';
+    visible.addEventListener('change', () => {
+      rule.visible = visible.checked;
+      const mesh = ruleMeshes.get(rule.id);
+      if (mesh) mesh.visible = rule.visible;
+      saveState();
+    });
+
+    const color = document.createElement('input');
+    color.type = 'color';
+    color.value = rule.color;
+    color.title = 'Color for matching geometry';
+    color.addEventListener('input', () => {
+      rule.color = color.value;
+      scheduleRecolor();
+    });
+
+    const count = document.createElement('span');
+    count.className = 'rule-count';
+    count.dataset.countFor = rule.id;
+    count.textContent = '0 faces';
+
+    metaLeft.append(visible, color, count);
+
+    const del = document.createElement('button');
+    del.className = 'rule-delete';
+    del.title = 'Remove rule';
+    del.textContent = '✕';
+    del.addEventListener('click', () => {
+      rules = rules.filter((r) => r.id !== rule.id);
+      renderRulesList();
+      scheduleRecolor();
+    });
+
+    meta.append(metaLeft, del);
+    row.append(condition, meta);
+    list.appendChild(row);
+  }
+}
+
+const PANEL_COLLAPSED_KEY = 'instance-color-rules:panel-collapsed';
+
+// Collapsing the panel only changes its CSS width — the viewport div next
+// to it is `flex: 1`, so it grows to fill the reclaimed space on its own,
+// and the ResizeObserver already watching it (see initScene) picks that up
+// and resizes the Three.js renderer/camera with no extra plumbing needed.
+function setPanelCollapsed(collapsed) {
+  el('rules-panel').classList.toggle('collapsed', collapsed);
+  el('rules-body').hidden = collapsed;
+  const toggle = el('panel-collapse-btn');
+  toggle.textContent = collapsed ? '«' : '»';
+  toggle.title = collapsed ? 'Expand panel' : 'Collapse panel';
+  try {
+    localStorage.setItem(PANEL_COLLAPSED_KEY, collapsed ? '1' : '0');
+  } catch (e) {
+    // Same opaque-origin/private-mode risk as the rules localStorage
+    // calls below — collapsing still works for this session, it just
+    // won't be remembered next time.
+  }
+}
+
+function loadPanelCollapsed() {
+  try {
+    return localStorage.getItem(PANEL_COLLAPSED_KEY) === '1';
+  } catch (e) {
+    return false;
+  }
+}
+
+function wireStaticRuleControls() {
+  el('panel-collapse-btn').addEventListener('click', () => {
+    setPanelCollapsed(!el('rules-panel').classList.contains('collapsed'));
+  });
+
+  el('add-rule-btn').addEventListener('click', () => {
+    rules.push({ id: makeRuleId(), field: 'name', matchType: 'contains', text: '', color: '#2f6fed', visible: true });
+    renderRulesList();
+    scheduleRecolor();
+  });
+
+  const elseColorInput = el('else-color');
+  elseColorInput.value = elseColor;
+  elseColorInput.addEventListener('input', () => {
+    elseColor = elseColorInput.value;
+    scheduleRecolor();
+  });
+
+  const elseVisibleInput = el('else-visible');
+  elseVisibleInput.checked = elseVisible !== false;
+  elseVisibleInput.addEventListener('change', () => {
+    elseVisible = elseVisibleInput.checked;
+    const mesh = ruleMeshes.get('else');
+    if (mesh) mesh.visible = elseVisible;
+    saveState();
+  });
+}
+
+// Debounced so recoloring doesn't re-run on every single keystroke while
+// typing a rule's text — 200ms is short enough to feel live, long enough
+// to coalesce a fast typist into one recolor per pause.
+function scheduleRecolor() {
+  saveState();
+  if (recolorTimer) clearTimeout(recolorTimer);
+  recolorTimer = setTimeout(recolorAndRender, 200);
+}
+
+// The cheap half of the pipeline: re-groups the already-read geometry by
+// the current rules and rebuilds the Three.js meshes. No JSA calls — this
+// is what makes editing a rule feel instant instead of re-reading the
+// whole model on every keystroke.
+function recolorAndRender() {
+  if (!lastChainEntries) return;
+  const groupBuckets = resolveRenderBuckets(lastChainEntries, rules, elseColor);
+  buildScene(groupBuckets, currentVisibility());
+  updateCounts(groupBuckets);
+}
+
+function updateCounts(groupBuckets) {
+  let totalTriangles = 0;
+  for (const group of groupBuckets.values()) totalTriangles += group.parts.reduce((n, p) => n + p.length, 0) / 9;
+
+  for (const rule of rules) {
+    const badge = el('rules-list').querySelector(`[data-count-for="${rule.id}"]`);
+    if (!badge) continue;
+    const faceCount = groupBuckets.get(rule.id)?.faceCount || 0;
+    badge.textContent = `${faceCount} face${faceCount === 1 ? '' : 's'}`;
+  }
+  const elseFaceCount = groupBuckets.get('else')?.faceCount || 0;
+  el('else-count').textContent = `${elseFaceCount} face${elseFaceCount === 1 ? '' : 's'}`;
+
+  el('rules-footer').textContent =
+    `${rules.length} rule${rules.length === 1 ? '' : 's'} · ${totalTriangles.toLocaleString()} triangles`;
+}
+
+// ─── Load / refresh / live-update pipeline ──────────────────────────────
+
+let model = null;
+let loading = false;
+let liveModelHandle = null;
+let liveUpdateTimer = null;
+const LIVE_UPDATE_DEBOUNCE_MS = 500;
+
+// The shared "do the actual work" step: read whatever `model` currently
+// points at, walk it, recolor, render. Both the manual Refresh button and
+// every live-update tick funnel through this — the only difference
+// between them is how `model` got set immediately beforehand.
+async function readAndRenderModel() {
+  if (!model || loading) return;
+  loading = true;
+  el('refresh-btn').disabled = true;
+  el('refresh-btn').classList.add('spinning');
+  clearError();
+  clearTruncated();
+
+  try {
+    el('model-name').textContent = model.name || 'Untitled model';
+
+    const geometry = await collectGeometryByAttributeChain(model);
+    lastChainEntries = geometry.chainEntries;
+    updateFieldOptions(geometry.availableFields);
+    recolorAndRender();
+    el('viewport-empty').hidden = true;
+
+    if (geometry.truncated) {
+      showTruncated(
+        `Stopped at ${MAX_TRIANGLES.toLocaleString()} triangles — this model is larger than the viewer's ` +
+        `limit, so what you see is partial.`
+      );
+    }
+    setStatus('Connected', 'connected');
+  } catch (e) {
+    console.error('[Instance Color Rules] failed to read the model', e);
+    showError(`Instance Color Rules could not read the model: ${e.message}`);
+    setStatus('Error', 'error');
+  } finally {
+    loading = false;
+    el('refresh-btn').disabled = false;
+    el('refresh-btn').classList.remove('spinning');
+  }
+}
+
+// Manual "Refresh" button entry point: explicitly re-fetch the model
+// reference first (model.refresh()), then read+render it. A refresh()
+// hiccup alone shouldn't block trying with whatever model reference is
+// already on hand — readAndRenderModel will surface the real error if the
+// model turns out to be genuinely unreadable.
+async function loadAndRender() {
+  if (!model) return;
+  try {
+    const freshModel = await model.refresh();
+    model = freshModel || model;
+  } catch (e) {
+    console.warn('[Instance Color Rules] model.refresh() failed, retrying with the existing reference', e);
+  }
+  await readAndRenderModel();
+}
+
+// Live-update entry point: SketchUpApi.observeActiveModel already handed
+// us a guaranteed-fresh model reference (streamModel.getModel()), so this
+// skips the extra refresh() round-trip loadAndRender does for the manual
+// button.
+async function handleLiveModelChange(streamModel) {
+  try {
+    model = await streamModel.getModel();
+    await readAndRenderModel();
+  } catch (e) {
+    console.error('[Instance Color Rules] live update failed', e);
+    showError(`Live update failed: ${e.message}`);
+  }
+}
+
+// SketchUpApi.observeActiveModel — confirmed directly from the shipped
+// SDK source (Sketchup.js): a genuine push notification (not polling)
+// that fires whenever the active model's revision changes (essentially
+// any edit) or the active model itself switches to a different document.
+// The callback receives a lightweight {id, revision, getModel(),
+// isModelChanged()} object; getModel() fetches the full fresh Model.
+// Debounced so a burst of edits (dragging a face, an undo/redo chain)
+// coalesces into one re-walk instead of re-triangulating on every
+// intermediate revision tick.
+//
+// Wrapped in try/catch and left non-fatal on failure: this API has no
+// existing precedent elsewhere in this workspace to confirm it behaves
+// identically on every JSA host/platform/version, so if it's ever
+// unavailable, the extension should keep working via manual Refresh
+// rather than fail to load entirely.
+function startLiveUpdates() {
+  try {
+    liveModelHandle = SketchUpApi.observeActiveModel((streamModel) => {
+      if (liveUpdateTimer) clearTimeout(liveUpdateTimer);
+      liveUpdateTimer = setTimeout(() => handleLiveModelChange(streamModel), LIVE_UPDATE_DEBOUNCE_MS);
+    });
+    el('live-indicator').hidden = false;
+  } catch (e) {
+    console.warn('[Instance Color Rules] live updates unavailable, falling back to manual Refresh', e);
+  }
+}
+
+function stopLiveUpdates() {
+  if (liveUpdateTimer) clearTimeout(liveUpdateTimer);
+  // Confirmed from SDK source (Sketchup.js): createObserverHandle returns
+  // { endStream, stop } — NOT `.end()`, which JSA_API_COMPLETE.md's prose
+  // claims for observer handles generally. Already been burned once by
+  // trusting this same doc file for a property name (see the
+  // .transform/.transformation bug elsewhere in this file), so this one
+  // was verified against source before shipping rather than assumed.
+  liveModelHandle?.stop?.();
+}
+
+function wireUi() {
+  el('refresh-btn').addEventListener('click', loadAndRender);
+  el('error-banner-close').addEventListener('click', clearError);
+  el('truncated-banner-close').addEventListener('click', clearTruncated);
+  wireStaticRuleControls();
+  renderRulesList();
+  setPanelCollapsed(loadPanelCollapsed());
+}
+
+async function init() {
+  wireUi();
+  initScene();
+
+  try {
+    await SketchUpApi.connect();
+    model = await SketchUpApi.getActiveModel();
+    el('refresh-btn').disabled = false;
+    await loadAndRender();
+    startLiveUpdates();
+  } catch (e) {
+    console.error('[Instance Color Rules] connection failed', e);
+    setStatus('Not connected', 'error');
+    showError(`Not connected to SketchUp (${e.message}) — this panel only works when run inside SketchUp.`);
+    el('viewport-empty').textContent = 'Not connected to SketchUp.';
+  }
+}
+
+window.addEventListener('beforeunload', () => {
+  stopLiveUpdates();
+  SketchUpApi.disconnect();
+});
+
+init();
+  </script>
+</body>
+</html>
