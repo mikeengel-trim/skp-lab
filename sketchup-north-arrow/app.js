@@ -38,8 +38,7 @@ function normalize(a) {
 // live SketchUp session (only against the shipped JSA SDK source, which
 // exposes the raw number with no documented unit conversion) — see
 // README.md "North angle: what's confirmed and what's assumed":
-//   1. Unit — assumed radians, per JSA's own general "angles are radians"
-//      rule and the north-angle-setting recipe's own inline comment.
+//   1. Unit — degrees, per ShadowInfo.northAngle's documented behavior.
 //   2. Rotation sign — assumed clockwise-positive when viewed from above
 //      (SketchUp's standard geo-location convention), i.e. a positive angle
 //      swings north from +Y toward +X.
@@ -48,8 +47,8 @@ function normalize(a) {
 // derived from this one vector.
 const NORTH_ANGLE_SIGN = 1;
 
-function northVectorFromAngle(northAngleRadians) {
-  const angle = NORTH_ANGLE_SIGN * northAngleRadians;
+function northVectorFromAngle(northAngleDegrees) {
+  const angle = NORTH_ANGLE_SIGN * (northAngleDegrees * Math.PI) / 180;
   return { x: Math.sin(angle), y: Math.cos(angle), z: 0 };
 }
 
@@ -70,7 +69,7 @@ function northVectorFromAngle(northAngleRadians) {
 // south) — there's no meaningful 2D bearing at that exact orientation, so
 // the caller should just leave the arrow at its last rotation rather than
 // snapping to an arbitrary angle.
-function computeArrowRotationDegrees(camera, northAngleRadians) {
+function computeArrowRotationDegrees(camera, northAngleDegrees) {
   const forward = normalize(subtract(camera.target, camera.eye));
   if (length(forward) < 1e-9) return null; // degenerate camera (eye == target)
 
@@ -84,7 +83,7 @@ function computeArrowRotationDegrees(camera, northAngleRadians) {
   }
   const screenUp = normalize(cross(right, forward));
 
-  const north = northVectorFromAngle(northAngleRadians);
+  const north = northVectorFromAngle(northAngleDegrees);
   const screenX = dot(north, right);
   const screenY = dot(north, screenUp);
   if (Math.hypot(screenX, screenY) < 1e-6) return null;
@@ -98,11 +97,11 @@ function computeArrowRotationDegrees(camera, northAngleRadians) {
 
 const arrowEl = document.getElementById('arrow');
 
-let northAngleRadians = 0; // ShadowInfo.northAngle; refreshed on load and on model changes
+let northAngleDegrees = 0; // ShadowInfo.northAngle; refreshed on load and on model changes
 let model = null;
 
 function applyRotation(camera) {
-  const degrees = computeArrowRotationDegrees(camera, northAngleRadians);
+  const degrees = computeArrowRotationDegrees(camera, northAngleDegrees);
   if (degrees === null) return; // keep last rotation — see computeArrowRotationDegrees
   arrowEl.style.transform = `rotate(${degrees}deg)`;
 }
@@ -112,7 +111,7 @@ async function refreshNorthAngle() {
   try {
     const shadowInfo = await model.getShadowInfo();
     if (shadowInfo && typeof shadowInfo.northAngle === 'number') {
-      northAngleRadians = shadowInfo.northAngle;
+      northAngleDegrees = shadowInfo.northAngle;
     }
   } catch (e) {
     console.warn('[North Arrow] could not read shadow info / north angle', e);
