@@ -100,7 +100,7 @@ async function loadTags() {
 // order is what makes facePushPull(floor, height) extrude upward, leaving
 // the base at the origin (z=0) and the top at z=height. The reverse order
 // extrudes downward instead, leaving the top at the origin.
-function buildSpace(operation, { width, depth, height, name, tagRef }) {
+async function buildSpace(operation, { width, depth, height, name, tagRef }) {
   const group = operation.createGroup(operation.model);
 
   const floor = operation.createFace(group, [
@@ -117,8 +117,10 @@ function buildSpace(operation, { width, depth, height, name, tagRef }) {
     operation.drawingElementSetTag(group, tagRef);
   }
 
-  const definitionRef = operation.entityForRef(group).definition;
-  operation.definitionAddClassification(definitionRef, IFC4_SCHEMA_NAME, IFC_SPACE_TYPE);
+  // entityForRef() resolves asynchronously, so .definition has to be read
+  // off the awaited entity rather than off the pending promise.
+  const entity = await operation.entityForRef(group);
+  operation.definitionAddClassification(entity.definition, IFC4_SCHEMA_NAME, IFC_SPACE_TYPE);
 }
 
 // Loads the IFC4 schema into the model if it isn't already, so
@@ -158,7 +160,7 @@ async function placeSpaces() {
 
       for (let i = 0; i < count; i += 1) {
         const instanceName = count === 1 ? name : `${name} ${i + 1}`;
-        buildSpace(operation, { width, depth, height, name: instanceName, tagRef });
+        await buildSpace(operation, { width, depth, height, name: instanceName, tagRef });
       }
     }, 'Create space');
 
