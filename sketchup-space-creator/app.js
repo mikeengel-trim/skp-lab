@@ -6,6 +6,13 @@
 
 const INCHES_PER_FOOT = 12;
 
+// Classifies every space as IfcSpace under the IFC4 schema, so it shows up
+// correctly in SketchUp's Entity Info > Advanced Attributes panel and in any
+// IFC export. IFC 2x3 is the only other schema the JSA currently supports.
+const IFC4_SCHEMA_NAME = 'IFC 4';
+const IFC4_SCHEMA_URL = 'https://cdn.habitat.sketchup.com/classifications/schemas/IFC4.skc';
+const IFC_SPACE_TYPE = 'IfcSpace';
+
 const form = document.getElementById('space-form');
 const nameInput = document.getElementById('name');
 const widthFt = document.getElementById('width-ft');
@@ -109,6 +116,21 @@ function buildSpace(operation, { width, depth, height, name, tagRef }) {
   if (tagRef !== undefined) {
     operation.drawingElementSetTag(group, tagRef);
   }
+
+  const definitionRef = operation.entityForRef(group).definition;
+  operation.definitionAddClassification(definitionRef, IFC4_SCHEMA_NAME, IFC_SPACE_TYPE);
+}
+
+// Loads the IFC4 schema into the model if it isn't already, so
+// definitionAddClassification(..., IFC4_SCHEMA_NAME, ...) has a schema to
+// classify against. Safe to call every time a space is placed: schemas stay
+// loaded for the life of the model, so this only pays the load cost once.
+async function ensureIfc4SchemaLoaded(model, operation) {
+  const classifications = await model.getClassifications();
+  const alreadyLoaded = classifications.some(schema => schema.name === IFC4_SCHEMA_NAME);
+  if (!alreadyLoaded) {
+    await operation.modelLoadSchemaFromUrl(IFC4_SCHEMA_URL);
+  }
 }
 
 // Places `count` copies of the same space, all at the origin — this tool has
@@ -126,6 +148,8 @@ async function placeSpaces() {
     const model = await SketchUpApi.getActiveModel();
 
     await model.performOperation(async operation => {
+      await ensureIfc4SchemaLoaded(model, operation);
+
       let tagRef;
       if (tagName !== '') {
         const tagManager = await model.getTagManager();
