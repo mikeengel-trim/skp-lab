@@ -19,7 +19,6 @@ const countValue = document.getElementById('count-value');
 const countDown = document.getElementById('count-down');
 const countUp = document.getElementById('count-up');
 const status = document.getElementById('status');
-const placeAndNewButton = document.getElementById('place-and-new');
 const placeButton = document.getElementById('place');
 const addTagsByThemeButton = document.getElementById('add-tags-by-theme');
 
@@ -50,7 +49,6 @@ function updateButtons() {
     feetAndInchesToInches(widthFt, widthIn) > 0 &&
     feetAndInchesToInches(depthFt, depthIn) > 0 &&
     feetAndInchesToInches(heightFt, heightIn) > 0;
-  placeAndNewButton.disabled = !ready;
   placeButton.disabled = !ready;
 }
 
@@ -76,6 +74,9 @@ async function loadTags() {
 
   tagSelect.replaceChildren(new Option('Untagged', ''));
   for (const tag of tagManager.tags) {
+    // The model's own built-in default tag is also named "Untagged" — skip
+    // it so it doesn't duplicate the synthetic "no tag" option above.
+    if (tag.name === 'Untagged') continue;
     tagSelect.append(new Option(tag.name, tag.name));
   }
 
@@ -86,16 +87,20 @@ async function loadTags() {
   }
 }
 
-// Builds one box: a counter-clockwise floor rectangle so its front points up,
-// pushed to height, named and tagged.
+// Builds one box: a floor rectangle pushed to height, named and tagged.
+//
+// Vertex order matters here: confirmed via live testing that this winding
+// order is what makes facePushPull(floor, height) extrude upward, leaving
+// the base at the origin (z=0) and the top at z=height. The reverse order
+// extrudes downward instead, leaving the top at the origin.
 function buildSpace(operation, { width, depth, height, name, tagRef }) {
   const group = operation.createGroup(operation.model);
 
   const floor = operation.createFace(group, [
     [0, 0, 0],
-    [width, 0, 0],
-    [width, depth, 0],
     [0, depth, 0],
+    [width, depth, 0],
+    [width, 0, 0],
   ]);
 
   operation.facePushPull(floor, height);
@@ -116,7 +121,6 @@ async function placeSpaces() {
   const height = feetAndInchesToInches(heightFt, heightIn);
   const tagName = tagSelect.value;
 
-  placeAndNewButton.disabled = true;
   placeButton.disabled = true;
   try {
     const model = await SketchUpApi.getActiveModel();
@@ -192,18 +196,6 @@ async function addTagsByTheme() {
 
 addTagsByThemeButton.addEventListener('click', () => {
   void addTagsByTheme();
-});
-
-form.addEventListener('submit', async event => {
-  event.preventDefault();
-  const placed = await placeSpaces();
-  if (placed) {
-    // "+ Create New" clears just the name, so dimensions/tag/count carry over
-    // for the next space in the same batch.
-    nameInput.value = '';
-    nameInput.focus();
-    updateButtons();
-  }
 });
 
 // Register before connecting so reopening/refocusing the sidebar re-runs

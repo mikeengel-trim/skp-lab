@@ -58,9 +58,11 @@ model. Lives in the Sidebar.
   square in the mockup was dropped rather than faked with a custom
   non-native dropdown. `tag.color` (red/green/blue/alpha) is available from
   `TagManager.tags` if a custom dropdown is wanted later.
-- **"Place Space" vs "Place Space + Create New"** both create `count`
-  copies with the current form values; the "+ Create New" variant then
-  clears just the Name field (keeping dimensions/tag/count) and refocuses it
-  for entering the next space. Plain "Place Space" leaves the form untouched.
-  The mockup doesn't specify the difference beyond the label, so this is a
-  guess at intent.
+- **Floor face winding order.** Confirmed via live testing that `createFace`'s
+  vertex order determines which way `facePushPull(floor, height)` extrudes —
+  the wrong order built the box with its top at the origin instead of its
+  base. `buildSpace` now uses the order that puts the base at z=0.
+- **Tag dropdown's "Untagged" tag.** The model's own built-in default tag is
+  also literally named "Untagged", so `loadTags()` skips it by name when
+  copying `tagManager.tags` into the dropdown — otherwise it'd duplicate the
+  synthetic "no tag" option already at the top.
