@@ -49,6 +49,12 @@ async function collectComponents(model) {
   const discoveredFields = new Map();
   const definitionVisitCounts = new Map();
   let truncated = false;
+  // Diagnostic only (surfaced in the UI when the walk turns up zero
+  // components, since iPad has no accessible devtools) — a tally of every
+  // entity type the walk actually saw, root and nested, regardless of
+  // whether it was countable. Tells us whether entities.get() returned
+  // nothing at all vs. returned things this walk doesn't recognize.
+  const typeTally = new Map();
 
   function buildComponentRecord(instance, definition) {
     const definitionAttrs = attributesToPlainObject(definition?.attributes);
@@ -72,6 +78,7 @@ async function collectComponents(model) {
     for (const child of children) {
       if (truncated) return;
       const typeName = child?.constructor?.name || '';
+      typeTally.set(typeName, (typeTally.get(typeName) || 0) + 1);
 
       if (typeName === 'Group') {
         await walk(child, depth + 1);
@@ -103,7 +110,12 @@ async function collectComponents(model) {
   }
 
   await walk(model, 0);
-  return { components, availableFields: [...discoveredFields.values()], truncated };
+  return {
+    components,
+    availableFields: [...discoveredFields.values()],
+    truncated,
+    typeTally: [...typeTally.entries()].map(([type, count]) => `${type || '(blank)'}: ${count}`).join(', ') || '(no entities seen at all)',
+  };
 }
 
 // ─── State, persistence ─────────────────────────────────────────────────
@@ -526,11 +538,18 @@ async function readAndRenderModel() {
     updateFieldOptions(result.availableFields);
     renderTable();
 
+    console.log('[Component Tag Table] entity types seen while walking the model:', result.typeTally);
+
     if (result.truncated) {
       showTruncated(
         `Stopped at ${MAX_COMPONENTS.toLocaleString()} components — this model has more than the table's ` +
         `limit, so what you see is partial.`
       );
+    } else if (allComponents.length === 0) {
+      // The walk completed without error but found no ComponentInstance —
+      // surfaced in-app (not just console.log) because iPad has no
+      // accessible devtools to check the console from.
+      showTruncated(`No components found. Entity types seen while walking the model: ${result.typeTally}.`);
     }
     setStatus('Connected', 'connected');
   } catch (e) {

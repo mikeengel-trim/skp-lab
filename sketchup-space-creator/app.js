@@ -101,9 +101,9 @@ async function loadTags() {
 // the base at the origin (z=0) and the top at z=height. The reverse order
 // extrudes downward instead, leaving the top at the origin.
 async function buildSpace(operation, { width, depth, height, name, tagRef }) {
-  const group = operation.createGroup(operation.model);
+  const definition = operation.createDefinition(name);
 
-  const floor = operation.createFace(group, [
+  const floor = operation.createFace(definition, [
     [0, 0, 0],
     [0, depth, 0],
     [width, depth, 0],
@@ -111,15 +111,17 @@ async function buildSpace(operation, { width, depth, height, name, tagRef }) {
   ]);
 
   operation.facePushPull(floor, height);
-  operation.groupSetName(group, name);
+
+  const instance = operation.createInstance(operation.model, definition, SketchUpApi.Transformation.IDENTITY);
+  operation.instanceSetName(instance, name);
 
   if (tagRef !== undefined) {
-    operation.drawingElementSetTag(group, tagRef);
+    operation.drawingElementSetTag(instance, tagRef);
   }
 
   // entityForRef() resolves asynchronously, so .definition has to be read
   // off the awaited entity rather than off the pending promise.
-  const entity = await operation.entityForRef(group);
+  const entity = await operation.entityForRef(instance);
   operation.definitionAddClassification(entity.definition, IFC4_SCHEMA_NAME, IFC_SPACE_TYPE);
 }
 
