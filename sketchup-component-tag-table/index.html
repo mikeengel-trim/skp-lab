@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Component Tag Table</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.habitat.sketchup.com/dist/sketchup-js-api/v2/sketchup-js-api.min.js"></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="title-block">
+      <h1>Component Tag Table</h1>
+      <p>Every component in the model, grouped by tag.</p>
+    </div>
+    <span class="live-indicator" id="live-indicator" hidden><span class="live-dot"></span>Live</span>
+    <span class="status-pill" id="status-pill">Connecting…</span>
+    <button class="btn-icon" id="refresh-btn" title="Re-read the model now" disabled>⟳</button>
+  </header>
+
+  <div class="banner banner-error" id="error-banner" hidden>
+    <span class="banner-text" id="error-banner-text"></span>
+    <span class="banner-close" id="error-banner-close">✕</span>
+  </div>
+  <div class="banner banner-warn" id="truncated-banner" hidden>
+    <span class="banner-text" id="truncated-banner-text"></span>
+    <span class="banner-close" id="truncated-banner-close">✕</span>
+  </div>
+
+  <div class="toolbar">
+    <div class="toolbar-group">
+      <span class="toolbar-label">Columns</span>
+      <div class="chip-list" id="columns-list"></div>
+      <select id="add-column-select">
+        <option value="">+ Add column…</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <div class="toolbar-group filters-group">
+      <span class="toolbar-label">Filters</span>
+      <div class="filter-rows" id="filters-list"></div>
+      <div class="filters-actions">
+        <button class="btn-add" id="add-filter-btn">+ Add filter</button>
+        <button class="btn-link" id="clear-filters-btn" disabled>Clear all</button>
+        <span class="filters-summary" id="filters-summary"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="table-wrapper" id="table-wrapper">
+    <table id="tag-table">
+      <thead id="tag-table-head"></thead>
+      <tbody id="tag-table-body"></tbody>
+    </table>
+    <div class="empty-state" id="empty-state" hidden>No components match the current filters.</div>
+  </div>
+
+  <footer class="app-footer" id="footer-summary">—</footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

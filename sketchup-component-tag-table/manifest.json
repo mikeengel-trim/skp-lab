@@ -1,0 +1,26 @@
+{
+  "manifestFormatVersion": "1.0.0",
+  "id": "component-tag-table",
+  "name": "Component Tag Table",
+  "description": "A floating, resizable table that counts every component in the model, grouped by tag, with user-chosen attribute columns and filters matching Instance Color Rules' filter pattern.",
+  "version": "0.1.0",
+  "creator": "",
+  "mainFile": "index.html",
+  "window": {
+    "type": "floating",
+    "width": 900,
+    "height": 640,
+    "right": 160,
+    "top": 55
+  },
+  "commands": {
+    "open": {
+      "title": "Component Tag Table",
+      "description": "Open a live-updating table of component counts grouped by tag.",
+      "icon": "icon.svg"
+    }
+  },
+  "menuItems": [
+    { "type": "item", "commandId": "open" }
+  ]
+}

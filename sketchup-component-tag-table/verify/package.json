@@ -1,0 +1,11 @@
+{
+  "name": "component-tag-table-verify",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node verify.mjs && node verify-dom.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "^24.0.0"
+  }
+}
