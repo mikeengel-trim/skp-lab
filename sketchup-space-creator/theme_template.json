@@ -1,0 +1,14 @@
+{
+  "themeName": "New Theme",
+  "description": "One sentence describing the building type and what these departments are organized around.",
+  "departments": [
+    {
+      "name": "Department Name",
+      "description": "Optional — the mood/material intent for this department.",
+      "color": "#RRGGBB",
+      "spaces": [
+        { "name": "Space Name", "targetArea": "0 SF", "notes": "Optional details about this space." }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "themeName": "Multifamily Residential (Cold Climate)",
+  "description": "A market-rate apartment building sized for a harsh-winter market, where indoor amenities carry more weight than outdoor ones and parking is still required for financing.",
+  "departments": [
+    {
+      "name": "Residential Units",
+      "description": "Private, restful, the majority of rentable area",
+      "color": "#7E9BB0",
+      "spaces": [
+        { "name": "Studio / Micro", "count": 30, "targetArea": "500 NSF", "notes": "25% of unit mix" },
+        { "name": "1-Bedroom / 1-Bath", "count": 60, "targetArea": "650 NSF", "notes": "50% of unit mix" },
+        { "name": "2-Bedroom / 2-Bath", "count": 30, "targetArea": "1,000 NSF", "notes": "25% of unit mix" }
+      ]
+    },
+    {
+      "name": "Community & Amenity",
+      "description": "High-energy, social — a major driver of occupancy and retention in a cold climate",
+      "color": "#E0954F",
+      "spaces": [
+        { "name": "Main Lobby & Lounge", "targetArea": "1,500 SF", "notes": "Secure vestibule, ride-share waiting area, fireplace lounge" },
+        { "name": "Co-working Studio", "targetArea": "1,000 SF", "notes": "Open work tables, private zoom pods, coffee bar" },
+        { "name": "Fitness & Wellness", "targetArea": "1,800 SF", "notes": "Cardio, free weights, flex studio for yoga/stretching" },
+        { "name": "Rooftop Club Room", "targetArea": "1,200 SF", "notes": "Indoor entertaining space with skyline views, adjacent to outdoor deck" },
+        { "name": "Package Room", "targetArea": "500 SF", "notes": "High-capacity automated lockers and oversized package shelving" },
+        { "name": "Pet Spa", "targetArea": "300 SF", "notes": "Two washing stations and a grooming table" }
+      ]
+    },
+    {
+      "name": "Operations & BOH",
+      "description": "Utilitarian, largely invisible to tenants",
+      "color": "#8A8A8A",
+      "spaces": [
+        { "name": "Leasing & Admin", "targetArea": "750 SF", "notes": "Two leasing desks, private property manager office, staff break area" },
+        { "name": "MEP Rooms", "targetArea": "1,500 SF", "notes": "Main electrical switchgear, water service, boiler room, elevator machine rooms" },
+        { "name": "Trash & Recycling", "targetArea": "600 SF", "notes": "Ground-floor compactor room aligned with trash chutes from upper floors" },
+        { "name": "Maintenance Shop", "targetArea": "400 SF", "notes": "Tool storage, paint supply, workbench for the building engineer" }
+      ]
+    },
+    {
+      "name": "Transit & Parking",
+      "description": "Required for financing even where policy pushes toward walking, cycling, and transit",
+      "color": "#4A5A6A",
+      "spaces": [
+        { "name": "Vehicle Parking", "count": 72, "targetArea": "25,200 GSF", "notes": "0.6 spaces per unit; includes drive aisles and ramps at ~350 SF per stall" },
+        { "name": "Secure Bike Room", "count": 100, "targetArea": "1,200 GSF", "notes": "Wall-mounted and floor racks, plus a D.I.Y. bike repair stand and pump" }
+      ]
+    },
+    {
+      "name": "Circulation",
+      "description": "Transitional, neutral but not sterile",
+      "color": "#C9BEB0"
+    }
+  ]
+}

@@ -22,16 +22,59 @@ model. Lives in the Sidebar.
   `SketchUpApi.ui.on('open', ...)`, not just once at connect. The JSA SDK has
   no push-based "a tag changed" observer to subscribe to instead, so
   re-fetching at the moments the list is about to matter is the fix.
-- **"Add Tags by Theme"** reads `hospitality_theme.json` (fetched with a plain
-  relative `fetch()`, since this extension's files are served straight from
-  the repo — no bundling step) and creates one tag per entry in its
-  `hotelDepartments` array, colored from that entry's `color.hex`. Existing
-  tags are looked up by name (`tagManager.getTagByName(name) ?? operation.createTag(name)`)
-  rather than duplicated, and `operation.tagSetColor(tagRef, SketchUpApi.Color.fromHex(hex))`
+- **"Add Tags by Theme"** reads a theme JSON file and creates one tag per
+  entry in its `departments` array, colored from that entry's `color`.
+  Existing tags are looked up by name
+  (`tagManager.getTagByName(name) ?? operation.createTag(name)`) rather than
+  duplicated, and `operation.tagSetColor(tagRef, SketchUpApi.Color.fromHex(color))`
   runs on every tag every time, so re-clicking after editing the JSON re-syncs
   colors safely. Note this uses `getTagByName`, not `findTag` — `findTag` is
   used elsewhere in this file but doesn't exist on the shipped SDK's
   `TagManager` class; `getTagByName` is the confirmed-correct method name.
+- The **Theme** dropdown lists the sample themes bundled in this repo (fetched
+  with a plain relative `fetch()`, since this extension's files are served
+  straight from the repo — no bundling step) plus an "Upload JSON file…"
+  option that opens a native file picker and reads the chosen file with
+  `FileReader`, so a theme doesn't have to live in this repo to be used.
+
+## Themes
+
+A theme is a JSON file describing the tags — one per "department" — a
+building type is organized around. Two samples ship in this repo:
+
+- [`hospitality_theme.json`](hospitality_theme.json) — a hotel's departments.
+- [`multifamily_theme.json`](multifamily_theme.json) — a cold-climate
+  market-rate apartment building, with a `spaces` breakdown under each
+  department (unit mix, amenity program, BOH, parking).
+
+[`theme_template.json`](theme_template.json) is the starting point for a new
+one. Schema:
+
+```jsonc
+{
+  "themeName": "string — documentation only",
+  "description": "string — documentation only",
+  "departments": [
+    {
+      "name": "string — required; becomes the tag name",
+      "description": "string — optional, documentation only",
+      "color": "#RRGGBB — required; becomes the tag color",
+      "spaces": [
+        // optional, documentation only — a place to note the individual
+        // spaces and target areas a department is made of.
+        { "name": "string", "targetArea": "string", "notes": "string" }
+      ]
+    }
+  ]
+}
+```
+
+Only `departments[].name` and `departments[].color` are read by the app;
+everything else exists so the JSON file itself can carry the program
+reasoning behind a theme. A new theme can either be added to
+`BUNDLED_THEMES` in [`app.js`](app.js) to appear in the dropdown, or used
+as-is via the "Upload JSON file…" option — no code change required for the
+latter.
 
 ## Assumptions worth checking against the real UI
 

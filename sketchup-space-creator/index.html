@@ -71,9 +71,11 @@
     </section>
 
     <section>
-      <span class="field-label">Theme</span>
+      <label class="field-label" for="theme-select">Theme</label>
+      <select id="theme-select"></select>
+      <input type="file" id="theme-file-input" accept="application/json,.json" hidden>
+      <p class="hint" id="theme-hint">Creates a tag for each department in the theme, colored to match.</p>
       <button type="button" id="add-tags-by-theme" class="btn btn-secondary">Add Tags by Theme</button>
-      <p class="hint">Creates a tag for each department in hospitality_theme.json, colored to match.</p>
     </section>
 
     <p id="status">Connecting&hellip;</p>

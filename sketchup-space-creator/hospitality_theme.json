@@ -1,112 +1,51 @@
 {
-  "hotelDepartments": [
+  "themeName": "Hospitality",
+  "description": "A hotel's departments, colored by the emotional register each one is designed for.",
+  "departments": [
     {
       "name": "Public Space",
       "description": "High emphasis, welcoming, energetic",
-      "color": {
-        "hex": "#D96C52",
-        "rgb": {
-          "r": 217,
-          "g": 108,
-          "b": 82
-        }
-      }
+      "color": "#D96C52"
     },
     {
       "name": "Guest Accommodations",
       "description": "Calming, restful, premium",
-      "color": {
-        "hex": "#6B8EAD",
-        "rgb": {
-          "r": 107,
-          "g": 142,
-          "b": 173
-        }
-      }
+      "color": "#6B8EAD"
     },
     {
       "name": "Food & Beverage",
       "description": "Appetizing, organic, vibrant",
-      "color": {
-        "hex": "#5E806D",
-        "rgb": {
-          "r": 94,
-          "g": 128,
-          "b": 109
-        }
-      }
+      "color": "#5E806D"
     },
     {
       "name": "Meeting & Events",
       "description": "Professional, grounded, focused",
-      "color": {
-        "hex": "#2B4162",
-        "rgb": {
-          "r": 43,
-          "g": 65,
-          "b": 98
-        }
-      }
+      "color": "#2B4162"
     },
     {
       "name": "Amenities & Recreation",
       "description": "Fresh, rejuvenating, active",
-      "color": {
-        "hex": "#479796",
-        "rgb": {
-          "r": 71,
-          "g": 151,
-          "b": 150
-        }
-      }
+      "color": "#479796"
     },
     {
       "name": "Circulation",
       "description": "Transitional, neutral but not sterile",
-      "color": {
-        "hex": "#D4C5B9",
-        "rgb": {
-          "r": 212,
-          "g": 197,
-          "b": 185
-        }
-      }
+      "color": "#D4C5B9"
     },
     {
       "name": "Administrative",
       "description": "Quiet, focused, semi-private",
-      "color": {
-        "hex": "#8B829E",
-        "rgb": {
-          "r": 139,
-          "g": 130,
-          "b": 158
-        }
-      }
+      "color": "#8B829E"
     },
     {
       "name": "Back of House (BOH)",
       "description": "Utilitarian, visually recedes",
-      "color": {
-        "hex": "#9E9E9E",
-        "rgb": {
-          "r": 158,
-          "g": 158,
-          "b": 158
-        }
-      }
+      "color": "#9E9E9E"
     },
     {
       "name": "Engineering & MEP",
       "description": "Heavy infrastructure, anchors the plan",
-      "color": {
-        "hex": "#424242",
-        "rgb": {
-          "r": 66,
-          "g": 66,
-          "b": 66
-        }
-      }
+      "color": "#424242"
     }
   ]
 }

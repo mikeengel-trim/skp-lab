@@ -28,6 +28,9 @@ const countUp = document.getElementById('count-up');
 const status = document.getElementById('status');
 const placeButton = document.getElementById('place');
 const addTagsByThemeButton = document.getElementById('add-tags-by-theme');
+const themeSelect = document.getElementById('theme-select');
+const themeFileInput = document.getElementById('theme-file-input');
+const themeHint = document.getElementById('theme-hint');
 
 let count = 1;
 
@@ -180,19 +183,86 @@ placeButton.addEventListener('click', () => {
   void placeSpaces();
 });
 
-// Fetches the theme file bundled next to this extension's own files — works
-// the same way app.js/style.css load, since SketchUp serves this folder
-// straight from the repo (see docs/CONVENTIONS.md).
-async function loadTheme() {
-  const response = await fetch('hospitality_theme.json');
+// Sample themes bundled next to this extension's own files — fetched the
+// same way app.js/style.css load, since SketchUp serves this folder straight
+// from the repo (see docs/CONVENTIONS.md).
+const BUNDLED_THEMES = [
+  { id: 'hospitality_theme.json', label: 'Hospitality' },
+  { id: 'multifamily_theme.json', label: 'Multifamily Residential' },
+];
+const CUSTOM_THEME_OPTION = 'custom';
+
+// Holds the most recently uploaded theme, keyed by { name, departments }, so
+// re-clicking "Add Tags by Theme" after an upload doesn't need to re-prompt
+// the file picker.
+let uploadedTheme = null;
+
+for (const theme of BUNDLED_THEMES) {
+  themeSelect.append(new Option(theme.label, theme.id));
+}
+themeSelect.append(new Option('Upload JSON file…', CUSTOM_THEME_OPTION));
+
+// A theme file's "departments" array is the one thing the rest of this app
+// depends on; everything else (themeName, description, per-space detail) is
+// documentation only, so validation stops there.
+function parseTheme(theme, sourceLabel) {
+  if (!Array.isArray(theme.departments)) {
+    throw new Error(`${sourceLabel} is missing a "departments" array.`);
+  }
+  return theme.departments;
+}
+
+async function loadBundledTheme(fileName) {
+  const response = await fetch(fileName);
   if (!response.ok) {
-    throw new Error(`Could not load hospitality_theme.json (${response.status})`);
+    throw new Error(`Could not load ${fileName} (${response.status})`);
   }
-  const theme = await response.json();
-  if (!Array.isArray(theme.hotelDepartments)) {
-    throw new Error('hospitality_theme.json is missing a "hotelDepartments" array.');
+  return parseTheme(await response.json(), fileName);
+}
+
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error ?? new Error(`Could not read ${file.name}`));
+    reader.readAsText(file);
+  });
+}
+
+themeFileInput.addEventListener('change', async () => {
+  const file = themeFileInput.files[0];
+  themeFileInput.value = '';
+  if (!file) return;
+
+  try {
+    const text = await readFileAsText(file);
+    const departments = parseTheme(JSON.parse(text), file.name);
+    uploadedTheme = { name: file.name, departments };
+    themeSelect.value = CUSTOM_THEME_OPTION;
+    themeHint.textContent = `Using uploaded theme: ${file.name}`;
+  } catch (error) {
+    report(String(error), 'error');
   }
-  return theme.hotelDepartments;
+});
+
+themeSelect.addEventListener('change', () => {
+  if (themeSelect.value === CUSTOM_THEME_OPTION) {
+    themeFileInput.click();
+  } else {
+    themeHint.textContent = 'Creates a tag for each department in the theme, colored to match.';
+  }
+});
+
+// Loads whichever theme is currently selected: a bundled sample fetched from
+// this repo, or the last file the user uploaded via the file picker.
+async function loadSelectedTheme() {
+  if (themeSelect.value === CUSTOM_THEME_OPTION) {
+    if (!uploadedTheme) {
+      throw new Error('Choose a JSON file to upload first.');
+    }
+    return uploadedTheme.departments;
+  }
+  return loadBundledTheme(themeSelect.value);
 }
 
 // Creates (or reuses) one tag per department and syncs its color to the
@@ -202,14 +272,14 @@ async function loadTheme() {
 async function addTagsByTheme() {
   addTagsByThemeButton.disabled = true;
   try {
-    const departments = await loadTheme();
+    const departments = await loadSelectedTheme();
     const model = await SketchUpApi.getActiveModel();
 
     await model.performOperation(async operation => {
       const tagManager = await model.getTagManager();
       for (const department of departments) {
         const tagRef = tagManager.getTagByName(department.name) ?? operation.createTag(department.name);
-        operation.tagSetColor(tagRef, SketchUpApi.Color.fromHex(department.color.hex));
+        operation.tagSetColor(tagRef, SketchUpApi.Color.fromHex(department.color));
       }
     }, 'Add tags by theme');
 
