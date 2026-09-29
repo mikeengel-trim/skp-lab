@@ -40,6 +40,7 @@ const assertions = [
   ['table starts visible (not hidden) in static markup', document.getElementById('component-table').hasAttribute('hidden'), false],
   ['empty-state starts hidden', document.getElementById('empty-state').hasAttribute('hidden'), true],
   ['add-column-select exists with placeholder option', document.getElementById('add-column-select').options.length >= 1, true],
+  ['group-by-definition-toggle exists and starts unchecked in static markup', document.getElementById('group-by-definition-toggle').checked, false],
 ];
 for (const [name, actual, expected] of assertions) {
   if (actual === expected) pass++;

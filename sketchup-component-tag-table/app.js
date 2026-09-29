@@ -139,7 +139,7 @@ function defaultState() {
   // Seeded with one column (Definition Name) so the table shows more than
   // just Tag + Count on first open, without presuming which Advanced
   // Attributes (if any) a given model actually has.
-  return { columns: ['definitionName'], filters: [] };
+  return { columns: ['definitionName'], filters: [], groupByDefinition: false };
 }
 
 function loadState() {
@@ -148,7 +148,7 @@ function loadState() {
     if (!raw) return defaultState();
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed.columns) || !Array.isArray(parsed.filters)) return defaultState();
-    return parsed;
+    return { columns: parsed.columns, filters: parsed.filters, groupByDefinition: !!parsed.groupByDefinition };
   } catch (e) {
     console.warn('[Component Table] could not read saved state, using defaults', e);
     return defaultState();
@@ -157,13 +157,13 @@ function loadState() {
 
 function saveState() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ columns, filters }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ columns, filters, groupByDefinition }));
   } catch (e) {
     console.warn('[Component Table] could not save state', e);
   }
 }
 
-let { columns, filters } = loadState();
+let { columns, filters, groupByDefinition } = loadState();
 // Grows over the session as collectComponents discovers Advanced
 // Attributes actually present in the model. Seeded with the always-
 // available built-ins so every picker has options even before the first
@@ -430,11 +430,43 @@ function matchTypeLabel(matchType) {
 el('add-filter-btn').addEventListener('click', addFilter);
 el('clear-filters-btn').addEventListener('click', clearFilters);
 
+// ─── Grouping mode (US-203) ─────────────────────────────────────────────
+
+el('group-by-definition-toggle').checked = groupByDefinition;
+el('group-by-definition-toggle').addEventListener('change', (e) => {
+  groupByDefinition = e.target.checked;
+  saveState();
+  renderTable();
+});
+
 // ─── Table rendering ────────────────────────────────────────────────────
+
+// Renders one aggregated-column cell into `row`, wiring up the Mixed (N)
+// expand-on-click behavior keyed by `cellKey`. Shared between the flat
+// (Tag only) and two-level (Tag → Definition Name) render paths below so
+// the expand behavior works identically at either grouping depth.
+function appendAggregatedCells(row, groupComponents, numericByColumn, cellKeyPrefix) {
+  for (const fieldId of columns) {
+    const summary = aggregateColumn(groupComponents, fieldId, numericByColumn.get(fieldId));
+    const cellKey = `${cellKeyPrefix}::${fieldId}`;
+    const expanded = expandedCells.has(cellKey);
+    const cell = td(formatColumnCell(summary, expanded));
+    if (summary.type === 'mixed') {
+      cell.classList.add('mixed-cell');
+      cell.title = summary.values.join(', ');
+      cell.addEventListener('click', () => {
+        if (expandedCells.has(cellKey)) expandedCells.delete(cellKey);
+        else expandedCells.add(cellKey);
+        renderTable();
+      });
+    }
+    row.appendChild(cell);
+  }
+}
 
 function renderTable() {
   const filtered = filterComponents(allComponents, filters.filter((f) => f.text.trim() !== ''));
-  const groups = groupComponentsByTag(filtered);
+  const groups = groupComponentsByTag(filtered, { byDefinition: groupByDefinition });
 
   const wrapper = el('table-wrapper');
   const table = el('component-table');
@@ -452,50 +484,59 @@ function renderTable() {
   emptyState.hidden = true;
 
   // Numeric-vs-text is decided once per column across the whole filtered
-  // set (not per tag group), so a column can't flip type row to row —
-  // see logic.js isFieldNumeric.
+  // set (not per tag group, and not per definition sub-group either), so a
+  // column can't flip type row to row — see logic.js isFieldNumeric.
   const numericByColumn = new Map(columns.map((fieldId) => [fieldId, isFieldNumeric(filtered, fieldId)]));
 
   const thead = el('component-table-head');
   thead.innerHTML = '';
   const headRow = document.createElement('tr');
   headRow.appendChild(th('Tag'));
+  if (groupByDefinition) headRow.appendChild(th('Definition Name'));
   headRow.appendChild(th('Count'));
   for (const fieldId of columns) headRow.appendChild(th(fieldLabel(fieldId)));
   thead.appendChild(headRow);
 
   const tbody = el('component-table-body');
   tbody.innerHTML = '';
+  let subgroupCount = 0;
   for (const group of groups) {
-    const row = document.createElement('tr');
-    if (group.tagLabel === UNTAGGED_LABEL) row.classList.add('untagged-row');
+    if (!groupByDefinition) {
+      const row = document.createElement('tr');
+      if (group.tagLabel === UNTAGGED_LABEL) row.classList.add('untagged-row');
 
-    row.appendChild(td(group.tagLabel));
-    row.appendChild(td(String(group.components.length), 'count-cell'));
-
-    for (const fieldId of columns) {
-      const summary = aggregateColumn(group.components, fieldId, numericByColumn.get(fieldId));
-      const cellKey = `${group.tagLabel}::${fieldId}`;
-      const expanded = expandedCells.has(cellKey);
-      const cell = td(formatColumnCell(summary, expanded));
-      if (summary.type === 'mixed') {
-        cell.classList.add('mixed-cell');
-        cell.title = summary.values.join(', ');
-        cell.addEventListener('click', () => {
-          if (expandedCells.has(cellKey)) expandedCells.delete(cellKey);
-          else expandedCells.add(cellKey);
-          renderTable();
-        });
-      }
-      row.appendChild(cell);
+      row.appendChild(td(group.tagLabel));
+      row.appendChild(td(String(group.components.length), 'count-cell'));
+      appendAggregatedCells(row, group.components, numericByColumn, group.tagLabel);
+      tbody.appendChild(row);
+      continue;
     }
-    tbody.appendChild(row);
+
+    // Tag → Definition Name: one row per definition sub-group, with the
+    // tag label shown once (on the first sub-row) rather than repeated —
+    // the sub-rows are still visually grouped under it via the shared
+    // .untagged-row styling and row order.
+    group.subgroups.forEach((sub, subIndex) => {
+      subgroupCount += 1;
+      const row = document.createElement('tr');
+      row.classList.add('definition-subrow');
+      if (group.tagLabel === UNTAGGED_LABEL) row.classList.add('untagged-row');
+
+      row.appendChild(td(subIndex === 0 ? group.tagLabel : ''));
+      row.appendChild(td(sub.definitionLabel));
+      row.appendChild(td(String(sub.components.length), 'count-cell'));
+      appendAggregatedCells(row, sub.components, numericByColumn, `${group.tagLabel}::${sub.definitionLabel}`);
+      tbody.appendChild(row);
+    });
   }
 
   const truncatedNote = lastTruncated ? ` (stopped at ${MAX_COMPONENTS.toLocaleString()} components — partial)` : '';
+  const groupingNote = groupByDefinition
+    ? ` across ${subgroupCount} definition group${subgroupCount === 1 ? '' : 's'}`
+    : '';
   el('footer-summary').textContent =
     `${filtered.length} of ${allComponents.length} component${allComponents.length === 1 ? '' : 's'} · ` +
-    `${groups.length} tag group${groups.length === 1 ? '' : 's'}${truncatedNote}`;
+    `${groups.length} tag group${groups.length === 1 ? '' : 's'}${groupingNote}${truncatedNote}`;
 }
 
 function th(text) {

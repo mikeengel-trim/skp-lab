@@ -44,6 +44,19 @@ Tags, materials, attributes and the active scene are never touched.
 - **Updates live** via `SketchUpApi.observeActiveModel`, the same debounced
   push-notification pattern proven in Instance Color Rules — no clicking
   Refresh after every edit, though Refresh remains as a manual fallback.
+- **Optional second grouping level: Tag → Definition Name** (US-203). A
+  "Tag → Definition Name" checkbox in a Grouping toolbar switches each tag
+  group into one row per Definition Name found within it, with per-column
+  aggregation computed at that sub-group level instead of the whole tag
+  group. Off by default (v1's original "Tag only" behavior, and the shape
+  every existing single-level caller still gets when the option is
+  omitted). The synthetic **Untagged** tag group breaks down by Definition
+  Name the same as any real tag; a component missing its own Definition
+  Name falls into its own `(No Definition Name)` fallback bucket (distinct
+  from Untagged, since it's a different field), sorted last within its tag
+  group the same way Untagged sorts last overall. The chosen mode persists
+  across sessions the same way columns do (`localStorage`, this browser
+  profile).
 
 ## PRD decisions made for v1
 
@@ -52,7 +65,7 @@ resolved for this build:
 
 | Question | Decision | Why |
 |---|---|---|
-| Grouping depth (tag only vs. tag → definition) | **Tag only** | User decision — keeps the table to one row per tag; definition-level breakdown can be a later addition if needed. |
+| Grouping depth (tag only vs. tag → definition) | **Tag only by default, with an opt-in "Tag → Definition Name" toggle (US-203)** | Originally deferred as "a later addition if needed" — that addition landed as an explicit user toggle rather than a default-on behavior change, so every existing saved column/filter setup keeps rendering exactly as before unless the user turns it on. |
 | Live update vs. manual refresh | **Live**, with manual Refresh as fallback | Matches Instance Color Rules' proven pattern; a "live inventory" that goes stale the moment you keep modeling defeats the PRD's own framing. |
 | Filter combination logic | **OR within one field, AND across fields** | Satisfies both "filter by one or more tags" (story 10) and "combine tag and attribute filters" (story 13) without a separate AND/OR toggle UI — see the filter section above. |
 | Row-to-model selection (story 25) | **Out of scope for v1** | User decision, consistent with the PRD's own "Out of Scope" section (read-only view in v1). |
@@ -73,7 +86,7 @@ sketchup-component-table/
 ├── app.js              # model walk (JSA calls) + DOM wiring; imports logic.js
 ├── icon.svg             # extension + command icon
 └── verify/               # pure-logic + DOM sanity tests
-    ├── verify.mjs         # imports logic.js directly, 31 assertions
+    ├── verify.mjs         # imports logic.js directly, 35 assertions
     ├── verify-dom.mjs      # loads the real index.html/app.js into jsdom
     └── package.json
 ```
@@ -107,12 +120,15 @@ npm install
 npm test
 ```
 
-`verify.mjs` (31 assertions) covers field id encode/decode, attribute
+`verify.mjs` (35 assertions) covers field id encode/decode, attribute
 flattening/merging, filter matching (all four match types, non-string value
 coercion), the OR-within-field/AND-across-field filter combination, tag
-grouping (Untagged sentinel, sort order), numeric-value/numeric-field
-detection, and column aggregation (empty/sum/single/list/mixed, including the
-`Mixed (N)` threshold and its expand-on-demand formatting).
+grouping (Untagged sentinel, sort order), the optional Tag → Definition Name
+two-level grouping (definition sub-buckets, the `(No Definition Name)`
+fallback, and Untagged breaking down by definition too — US-203), numeric-
+value/numeric-field detection, and column aggregation (empty/sum/single/
+list/mixed, including the `Mixed (N)` threshold and its expand-on-demand
+formatting).
 
 `verify-dom.mjs` loads the real shipped `index.html` into jsdom and confirms
 every element id `app.js` looks up actually exists in the markup, starting

@@ -47,12 +47,12 @@ Sample prompt to kickoff work by claude based on the Todo.md
 * **So that** I can see not just how many components are on a tag, but which component definitions make up that count — something the v1 PRD explicitly deferred ("Grouping depth... Tag only... definition-level breakdown can be a later addition if needed", per `README.md`).
 
 #### Acceptance Criteria
-- [ ] **Toggle:** Add a UI control (e.g. a checkbox/toggle near the existing column picker) to switch between "Tag only" (current v1 behavior, default) and "Tag → Definition Name" grouping.
-- [ ] **Grouping Logic:** Extend the grouping logic in `logic.js` to produce a two-level structure (tag group containing definition-name sub-rows) without breaking the existing single-level grouping path or its numeric-sum / text-list aggregation rules.
-- [ ] **Untagged Handling:** The synthetic "Untagged" group (see main feature notes) still works correctly when definition-level grouping is on, breaking down by Definition Name within "Untagged" the same as any other tag.
-- [ ] **Persistence:** The chosen grouping mode persists across sessions the same way column selection does (`localStorage`, per browser profile — matching the existing precedent noted in `README.md`).
-- [ ] **Test Coverage:** `verify/verify.mjs` includes assertions for two-level grouping output, including an Untagged + multi-definition case.
-- [ ] **Test Pipeline:** `npm test` inside `/verify` passes with 0 failures.
+- [x] **Toggle:** Add a UI control (e.g. a checkbox/toggle near the existing column picker) to switch between "Tag only" (current v1 behavior, default) and "Tag → Definition Name" grouping.
+- [x] **Grouping Logic:** Extend the grouping logic in `logic.js` to produce a two-level structure (tag group containing definition-name sub-rows) without breaking the existing single-level grouping path or its numeric-sum / text-list aggregation rules.
+- [x] **Untagged Handling:** The synthetic "Untagged" group (see main feature notes) still works correctly when definition-level grouping is on, breaking down by Definition Name within "Untagged" the same as any other tag.
+- [x] **Persistence:** The chosen grouping mode persists across sessions the same way column selection does (`localStorage`, per browser profile — matching the existing precedent noted in `README.md`).
+- [x] **Test Coverage:** `verify/verify.mjs` includes assertions for two-level grouping output, including an Untagged + multi-definition case.
+- [x] **Test Pipeline:** `npm test` inside `/verify` passes with 0 failures.
 
 ### [US-204] Row Selection Selects Matching Components in the Model
 * **As an** Extension User

@@ -172,7 +172,14 @@ export function filterComponents(components, filters) {
 // "Untagged", so a component tagged with that real tag lands in the same
 // bucket as one with no tag at all, which is the behavior a user looking
 // for tagging gaps actually wants (user story 4).
-export function groupComponentsByTag(components) {
+//
+// `byDefinition` (US-203) adds an optional second grouping level: each tag
+// entry also gets a `subgroups` array breaking its components down further
+// by Definition Name, using the same empty-value/sort rules as the tag
+// level but keyed on `definitionName` instead. Off by default so the
+// existing single-level entry shape (`{ tagLabel, components }`, no
+// `subgroups` key) is unchanged for every caller that doesn't ask for it.
+export function groupComponentsByTag(components, { byDefinition = false } = {}) {
   const groups = new Map(); // tagLabel -> component[]
   for (const component of components) {
     const label = component.tag && component.tag.trim() !== '' ? component.tag : UNTAGGED_LABEL;
@@ -180,7 +187,11 @@ export function groupComponentsByTag(components) {
     groups.get(label).push(component);
   }
 
-  const entries = [...groups.entries()].map(([tagLabel, comps]) => ({ tagLabel, components: comps }));
+  const entries = [...groups.entries()].map(([tagLabel, comps]) => ({
+    tagLabel,
+    components: comps,
+    ...(byDefinition ? { subgroups: groupComponentsByDefinitionName(comps) } : {}),
+  }));
   // Alphabetical, but Untagged always sorts last regardless of where it'd
   // otherwise land — it's a fallback bucket, not a real tag, and reads
   // better parked at the bottom of a reviewer's QA pass.
@@ -188,6 +199,35 @@ export function groupComponentsByTag(components) {
     if (a.tagLabel === UNTAGGED_LABEL) return 1;
     if (b.tagLabel === UNTAGGED_LABEL) return -1;
     return a.tagLabel.localeCompare(b.tagLabel, undefined, { sensitivity: 'base' });
+  });
+  return entries;
+}
+
+export const MISSING_DEFINITION_LABEL = '(No Definition Name)';
+
+// The second grouping level for US-203: buckets one tag group's components
+// by Definition Name. Not exported on its own — always reached through
+// groupComponentsByTag's `byDefinition` option, so the two levels can't
+// drift apart (e.g. a duplicated empty-value bucket with a different
+// fallback label). A missing/blank definition name gets its own fallback
+// bucket, distinct from UNTAGGED_LABEL since it's a different field —
+// this is what makes the "Untagged" tag group break down correctly by
+// Definition Name too, rather than needing special-case handling.
+function groupComponentsByDefinitionName(components) {
+  const groups = new Map(); // definitionLabel -> component[]
+  for (const component of components) {
+    const label = component.definitionName && component.definitionName.trim() !== ''
+      ? component.definitionName
+      : MISSING_DEFINITION_LABEL;
+    if (!groups.has(label)) groups.set(label, []);
+    groups.get(label).push(component);
+  }
+
+  const entries = [...groups.entries()].map(([definitionLabel, comps]) => ({ definitionLabel, components: comps }));
+  entries.sort((a, b) => {
+    if (a.definitionLabel === MISSING_DEFINITION_LABEL) return 1;
+    if (b.definitionLabel === MISSING_DEFINITION_LABEL) return -1;
+    return a.definitionLabel.localeCompare(b.definitionLabel, undefined, { sensitivity: 'base' });
   });
   return entries;
 }
