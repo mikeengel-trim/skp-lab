@@ -1,0 +1,7 @@
+{
+  "themes": [
+    { "fileName": "hospitality_theme.json", "label": "Hospitality" },
+    { "fileName": "multifamily_theme.json", "label": "Multifamily Residential" },
+    { "fileName": "singleFamily_theme.json", "label": "Single Family Residential" }
+  ]
+}

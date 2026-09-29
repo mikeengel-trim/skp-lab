@@ -184,6 +184,10 @@ footer {
   background: #f5f5f5;
 }
 
+#theme-file-input + .btn {
+  margin-top: 8px;
+}
+
 #theme-hint + .btn {
   margin-top: 10px;
 }

@@ -31,24 +31,43 @@ model. Lives in the Sidebar.
   colors safely. `getTagByName` is the confirmed-correct method on the shipped
   SDK's `TagManager` class — `findTag` doesn't exist on it and is no longer
   used anywhere in this file.
-- The **Theme** dropdown lists the sample themes bundled in this repo (fetched
-  with a plain relative `fetch()`, since this extension's files are served
-  straight from the repo — no bundling step) plus an "Upload JSON file…"
-  option that opens a native file picker and reads the chosen file with
-  `FileReader`, so a theme doesn't have to live in this repo to be used.
+- The **Theme** dropdown is populated once, at connect, from
+  [`themes.json`](themes.json) — a checked-in index of every sample theme
+  bundled in this repo, fetched with a plain relative `fetch()` the same way
+  `app.js`/`style.css` load (no bundling step). Adding a theme means adding
+  its JSON file plus one entry to `themes.json`, not an `app.js` change. If
+  that index can't be fetched or parsed, the dropdown falls back to a small
+  static list (`BUNDLED_THEMES`) rather than coming up empty.
+- The dropdown also remembers the last **bundled** theme selected, in
+  `localStorage` (key `space-creator:lastTheme:v1`), and restores it on the
+  next connect. Choosing "Upload JSON file…" is never saved/restored — an
+  uploaded file isn't available in a future session — so that option only
+  ever appears if picked again by hand.
+- **"Upload JSON file…"** reveals a "Choose file…" button, which opens the
+  native file picker (via `themeFileInput.click()`) and reads the chosen file
+  with `FileReader`, so a theme doesn't have to live in this repo to be used.
+  That click has to come from the button itself, a direct user gesture —
+  triggering it as a synthetic click from the `<select>`'s own `change` event
+  (the original approach) risked being silently blocked in the SketchUp
+  sidebar webview, since a `<select>` changing isn't a gesture on the file
+  input.
 
 ## Themes
 
 A theme is a JSON file describing the tags — one per "department" — a
-building type is organized around. Two samples ship in this repo:
+building type is organized around. Three samples ship in this repo, listed in
+[`themes.json`](themes.json):
 
 - [`hospitality_theme.json`](hospitality_theme.json) — a hotel's departments.
 - [`multifamily_theme.json`](multifamily_theme.json) — a cold-climate
   market-rate apartment building, with a `spaces` breakdown under each
   department (unit mix, amenity program, BOH, parking).
+- [`singleFamily_theme.json`](singleFamily_theme.json) — a single-family
+  house's departments (room/private/circulation/utility/active spaces).
 
 [`theme_template.json`](theme_template.json) is the starting point for a new
-one. Schema:
+one — deliberately left out of `themes.json` since it isn't a real theme.
+Schema:
 
 ```jsonc
 {
@@ -72,9 +91,8 @@ one. Schema:
 Only `departments[].name` and `departments[].color` are read by the app;
 everything else exists so the JSON file itself can carry the program
 reasoning behind a theme. A new theme can either be added to
-`BUNDLED_THEMES` in [`app.js`](app.js) to appear in the dropdown, or used
-as-is via the "Upload JSON file…" option — no code change required for the
-latter.
+[`themes.json`](themes.json) to appear in the dropdown, or used as-is via the
+"Upload JSON file…" option — no code change required for either.
 
 ## Assumptions worth checking against the real UI
 

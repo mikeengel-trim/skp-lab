@@ -73,7 +73,7 @@ Sample prompt to kickoff work by claude based on the Todo.md
     - No warning appears for a name that's unique, or on first load before
       any input.
 
-- [ ] **US-105: Remember last-used theme selection**
+- [x] **US-105: Remember last-used theme selection**
   As a user who regularly uses the same theme, I want Space Creator to
   reopen with my last-selected bundled theme already chosen, so that I don't
   have to re-pick it every session.
@@ -98,7 +98,7 @@ Sample prompt to kickoff work by claude based on the Todo.md
     - Count ≤ threshold places immediately with no added prompt, matching
       current behavior.
 
-- [ ] **US-107: Fix "Upload JSON file…" theme option**
+- [x] **US-107: Fix "Upload JSON file…" theme option**
   As a user who wants to use a theme that isn't bundled with this repo, I
   want choosing "Upload JSON file…" in the Theme dropdown to actually open a
   native file picker and load my chosen file, so that I can use a custom
@@ -122,7 +122,7 @@ Sample prompt to kickoff work by claude based on the Todo.md
     - "Add Tags by Theme" works against the uploaded theme afterward, same as
       it does today for bundled themes.
 
-- [ ] **US-108: Auto-populate Theme dropdown from all themes in the repo**
+- [x] **US-108: Auto-populate Theme dropdown from all themes in the repo**
   As a user, I want the Theme dropdown to list every theme file that exists
   in this repo (not just the two hardcoded in `BUNDLED_THEMES`), so that a
   theme added to the project shows up without an app.js code change.

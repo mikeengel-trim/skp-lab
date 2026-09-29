@@ -37,6 +37,7 @@ const placeButton = document.getElementById('place');
 const addTagsByThemeButton = document.getElementById('add-tags-by-theme');
 const themeSelect = document.getElementById('theme-select');
 const themeFileInput = document.getElementById('theme-file-input');
+const chooseThemeFileButton = document.getElementById('choose-theme-file');
 const themeHint = document.getElementById('theme-hint');
 
 let count = 1;
@@ -271,24 +272,82 @@ placeButton.addEventListener('click', () => {
   void placeSpaces();
 });
 
-// Sample themes bundled next to this extension's own files — fetched the
-// same way app.js/style.css load, since SketchUp serves this folder straight
-// from the repo (see docs/CONVENTIONS.md).
+// Fallback list, used only if THEMES_INDEX_FILE can't be loaded/parsed at
+// connect time (see populateThemeSelect below) — kept in sync manually, the
+// same as before US-108.
 const BUNDLED_THEMES = [
   { id: 'hospitality_theme.json', label: 'Hospitality' },
   { id: 'multifamily_theme.json', label: 'Multifamily Residential' },
 ];
+
+// A checked-in index of every theme file bundled in this repo — adding a
+// theme means adding its JSON file plus one entry here, not an app.js edit.
+// Fetched the same way app.js/style.css load, since SketchUp serves this
+// folder straight from the repo (see docs/CONVENTIONS.md).
+const THEMES_INDEX_FILE = 'themes.json';
+
 const CUSTOM_THEME_OPTION = 'custom';
+
+const THEME_STORAGE_KEY = 'space-creator:lastTheme:v1';
 
 // Holds the most recently uploaded theme, keyed by { name, departments }, so
 // re-clicking "Add Tags by Theme" after an upload doesn't need to re-prompt
 // the file picker.
 let uploadedTheme = null;
 
-for (const theme of BUNDLED_THEMES) {
-  themeSelect.append(new Option(theme.label, theme.id));
+// Populates the Theme dropdown from themes.json (every theme file bundled in
+// this repo), falling back to the static BUNDLED_THEMES list above if that
+// index can't be fetched or is malformed — this only runs once, at connect,
+// not on every reopen/refocus of the sidebar (that's the separate tag-only
+// refresh below, via SketchUpApi.ui.on('open', ...)).
+async function populateThemeSelect() {
+  let themes = BUNDLED_THEMES;
+  try {
+    const response = await fetch(THEMES_INDEX_FILE);
+    if (!response.ok) {
+      throw new Error(`Could not load ${THEMES_INDEX_FILE} (${response.status})`);
+    }
+    const data = await response.json();
+    if (!Array.isArray(data.themes)) {
+      throw new Error(`${THEMES_INDEX_FILE} is missing a "themes" array.`);
+    }
+    const discovered = data.themes.filter(
+      theme => typeof theme?.fileName === 'string' && typeof theme?.label === 'string',
+    );
+    if (discovered.length > 0) {
+      themes = discovered.map(theme => ({ id: theme.fileName, label: theme.label }));
+    }
+  } catch {
+    // Falling back silently is deliberate: an out-of-date/missing index file
+    // shouldn't leave the Theme dropdown empty, just less complete.
+    themes = BUNDLED_THEMES;
+  }
+
+  themeSelect.replaceChildren();
+  for (const theme of themes) {
+    themeSelect.append(new Option(theme.label, theme.id));
+  }
+  themeSelect.append(new Option('Upload JSON file…', CUSTOM_THEME_OPTION));
 }
-themeSelect.append(new Option('Upload JSON file…', CUSTOM_THEME_OPTION));
+
+// Restores the last bundled theme the user picked, if it's still an option.
+// "Upload JSON file…" is deliberately never saved/restored (see the change
+// listener below) since an uploaded file isn't available across sessions.
+function restoreLastTheme() {
+  let saved;
+  try {
+    saved = localStorage.getItem(THEME_STORAGE_KEY);
+  } catch (error) {
+    console.warn('[Space Creator] could not read saved theme selection', error);
+    return;
+  }
+  if (!saved || saved === CUSTOM_THEME_OPTION) return;
+
+  const stillAvailable = [...themeSelect.options].some(option => option.value === saved);
+  if (stillAvailable) {
+    themeSelect.value = saved;
+  }
+}
 
 // A theme file's "departments" array is the one thing the rest of this app
 // depends on; everything else (themeName, description, per-space detail) is
@@ -333,12 +392,28 @@ themeFileInput.addEventListener('change', async () => {
   }
 });
 
+// Selecting "Upload JSON file…" here is inert on its own — reveals the
+// "Choose file…" button, which is the only thing that opens the native
+// picker now. Triggering it as a synthetic click from this change event (the
+// old behavior) could be silently blocked in the SketchUp sidebar webview,
+// since it isn't a direct user gesture on the input itself.
 themeSelect.addEventListener('change', () => {
   if (themeSelect.value === CUSTOM_THEME_OPTION) {
-    themeFileInput.click();
+    themeHint.textContent = 'Choose a JSON file to upload.';
+    chooseThemeFileButton.hidden = false;
   } else {
     themeHint.textContent = 'Creates a tag for each department in the theme, colored to match.';
+    chooseThemeFileButton.hidden = true;
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, themeSelect.value);
+    } catch (error) {
+      console.warn('[Space Creator] could not save theme selection', error);
+    }
   }
+});
+
+chooseThemeFileButton.addEventListener('click', () => {
+  themeFileInput.click();
 });
 
 // Loads whichever theme is currently selected: a bundled sample fetched from
@@ -392,6 +467,8 @@ SketchUpApi.ui.on('open', () => {
 
 SketchUpApi.connect()
   .then(async () => {
+    await populateThemeSelect();
+    restoreLastTheme();
     await loadTags();
     updateButtons();
     report('Ready.', 'ok');
