@@ -92,7 +92,7 @@ async function loadTags() {
 
   // Keep whatever was selected if it still exists; a tag added elsewhere
   // shouldn't reset a choice the user already made.
-  if (tagManager.findTag(previousValue) !== undefined) {
+  if (tagManager.getTagByName(previousValue) !== undefined) {
     tagSelect.value = previousValue;
   }
 }
@@ -160,7 +160,7 @@ async function placeSpaces() {
       let tagRef;
       if (tagName !== '') {
         const tagManager = await model.getTagManager();
-        tagRef = tagManager.findTag(tagName) ?? operation.createTag(tagName);
+        tagRef = tagManager.getTagByName(tagName) ?? operation.createTag(tagName);
       }
 
       for (let i = 0; i < count; i += 1) {

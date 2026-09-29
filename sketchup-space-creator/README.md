@@ -10,8 +10,8 @@ model. Lives in the Sidebar.
 - Populating a `<select>` from the model's actual tags via
   `model.getTagManager()` → `tagManager.tags`, with an "Untagged" option that
   simply omits `drawingElementSetTag`.
-- Looking a tag up by name before creating it (`tagManager.findTag(name) ??
-  operation.createTag(name)`), so picking an existing tag never creates a
+- Looking a tag up by name before creating it (`tagManager.getTagByName(name)
+  ?? operation.createTag(name)`), so picking an existing tag never creates a
   duplicate.
 - Placing several copies as one undo step: the loop over `count` and every
   `createGroup`/`createFace`/`facePushPull`/`groupSetName`/`drawingElementSetTag`
@@ -28,9 +28,9 @@ model. Lives in the Sidebar.
   (`tagManager.getTagByName(name) ?? operation.createTag(name)`) rather than
   duplicated, and `operation.tagSetColor(tagRef, SketchUpApi.Color.fromHex(color))`
   runs on every tag every time, so re-clicking after editing the JSON re-syncs
-  colors safely. Note this uses `getTagByName`, not `findTag` — `findTag` is
-  used elsewhere in this file but doesn't exist on the shipped SDK's
-  `TagManager` class; `getTagByName` is the confirmed-correct method name.
+  colors safely. `getTagByName` is the confirmed-correct method on the shipped
+  SDK's `TagManager` class — `findTag` doesn't exist on it and is no longer
+  used anywhere in this file.
 - The **Theme** dropdown lists the sample themes bundled in this repo (fetched
   with a plain relative `fetch()`, since this extension's files are served
   straight from the repo — no bundling step) plus an "Upload JSON file…"

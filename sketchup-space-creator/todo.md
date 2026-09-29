@@ -14,6 +14,12 @@ Sample prompt to kickoff work by claude based on the Todo.md
 
 ## 📋 User Stories
 
+- [x] **BUG-100: `TagManager.findTag` doesn't exist on the shipped SDK**
+  `loadTags()` and `placeSpaces()` called `tagManager.findTag(name)`, but the
+  shipped SDK's `TagManager` class has no such method — `addTagsByTheme()`
+  already used the confirmed-correct `getTagByName(name)`. Fixed both call
+  sites to use `getTagByName`, matching `addTagsByTheme()`.
+
 - [ ] **US-101: Space spacing/grid placement**
   As a user placing multiple copies of a space, I want each copy offset from
   the last instead of stacked at the origin, so that I don't have to manually
