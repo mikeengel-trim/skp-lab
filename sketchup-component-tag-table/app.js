@@ -366,7 +366,8 @@ function renderFilters() {
     const matchType = document.createElement('select');
     matchType.className = 'filter-match-type';
     for (const [value, text] of [
-      ['contains', 'Contains'], ['equals', 'Equals'],
+      ['contains', 'Contains'], ['notContains', 'Does not contain'],
+      ['equals', 'Equals'], ['notEquals', 'Does not equal'],
       ['startsWith', 'Starts with'], ['endsWith', 'Ends with'],
     ]) {
       const opt = new Option(text, value, false, filter.matchType === value);
@@ -420,8 +421,10 @@ function updateFiltersSummary() {
 function matchTypeLabel(matchType) {
   switch (matchType) {
     case 'equals': return '=';
+    case 'notEquals': return '≠';
     case 'startsWith': return 'starts with';
     case 'endsWith': return 'ends with';
+    case 'notContains': return 'does not contain';
     case 'contains':
     default: return 'contains';
   }

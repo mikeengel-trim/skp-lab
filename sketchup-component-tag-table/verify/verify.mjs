@@ -13,6 +13,7 @@ import {
   mergeAttributeObjects,
   recordDiscoveredFields,
   filterMatches,
+  isNegatedMatchType,
   groupFiltersByField,
   componentMatchesFilters,
   filterComponents,
@@ -147,6 +148,27 @@ test('filterMatches never matches a null value or an empty filter', () => {
   assert.equal(filterMatches('Doors', { matchType: 'contains', text: '' }), false);
 });
 
+test('filterMatches: notEquals and notContains, case-insensitive', () => {
+  assert.equal(filterMatches('Doors', { matchType: 'notEquals', text: 'Windows' }), true);
+  assert.equal(filterMatches('Doors', { matchType: 'notEquals', text: 'doors' }), false);
+  assert.equal(filterMatches('Doors', { matchType: 'notContains', text: 'win' }), true);
+  assert.equal(filterMatches('Doors', { matchType: 'notContains', text: 'oor' }), false);
+});
+
+test('filterMatches: notEquals/notContains match a missing value (a component without the field passes "does not equal/contain")', () => {
+  assert.equal(filterMatches(null, { matchType: 'notEquals', text: 'Doors' }), true);
+  assert.equal(filterMatches(undefined, { matchType: 'notContains', text: 'Doors' }), true);
+  // still requires filter text — an incomplete row matches nothing, negated or not
+  assert.equal(filterMatches(null, { matchType: 'notEquals', text: '' }), false);
+});
+
+test('isNegatedMatchType identifies the two negated match types only', () => {
+  assert.equal(isNegatedMatchType('notEquals'), true);
+  assert.equal(isNegatedMatchType('notContains'), true);
+  assert.equal(isNegatedMatchType('equals'), false);
+  assert.equal(isNegatedMatchType('contains'), false);
+});
+
 test('groupFiltersByField groups by field and skips incomplete rows', () => {
   const filters = [
     { field: 'tag', matchType: 'equals', text: 'Doors' },
@@ -177,6 +199,45 @@ test('componentMatchesFilters: OR within a field, AND across fields', () => {
   assert.equal(componentMatchesFilters(windowComponent, byField), true);
   assert.equal(componentMatchesFilters(fixtureComponent, byField), false); // wrong tag
   assert.equal(componentMatchesFilters(metalDoor, byField), false); // right tag, wrong material
+});
+
+test('componentMatchesFilters: negated filters on the same field AND together instead of OR-ing with positive ones', () => {
+  // "Tag does not equal Doors" AND "Tag does not equal Windows" — excludes both,
+  // rather than the nonsensical "match anything" a plain OR would produce if a
+  // negated filter were combined the same way as two positive ones.
+  const doorComponent = { ...sampleComponent, tag: 'Doors' };
+  const windowComponent = { ...sampleComponent, tag: 'Windows' };
+  const fixtureComponent = { ...sampleComponent, tag: 'Fixtures' };
+
+  const filters = [
+    { field: 'tag', matchType: 'notEquals', text: 'Doors' },
+    { field: 'tag', matchType: 'notEquals', text: 'Windows' },
+  ];
+  const byField = groupFiltersByField(filters);
+
+  assert.equal(componentMatchesFilters(doorComponent, byField), false);
+  assert.equal(componentMatchesFilters(windowComponent, byField), false);
+  assert.equal(componentMatchesFilters(fixtureComponent, byField), true);
+});
+
+test('componentMatchesFilters: a positive and a negated filter on the same field AND together (does not trivially match everything)', () => {
+  // "Tag equals Doors" OR "Tag equals Windows" would normally OR, but mixing in
+  // "Tag does not equal Doors" must still exclude Doors components rather than
+  // matching every component regardless of tag.
+  const doorComponent = { ...sampleComponent, tag: 'Doors' };
+  const windowComponent = { ...sampleComponent, tag: 'Windows' };
+  const fixtureComponent = { ...sampleComponent, tag: 'Fixtures' };
+
+  const filters = [
+    { field: 'tag', matchType: 'equals', text: 'Doors' },
+    { field: 'tag', matchType: 'equals', text: 'Windows' },
+    { field: 'tag', matchType: 'notEquals', text: 'Doors' },
+  ];
+  const byField = groupFiltersByField(filters);
+
+  assert.equal(componentMatchesFilters(doorComponent, byField), false); // matches a positive, but fails the negated AND
+  assert.equal(componentMatchesFilters(windowComponent, byField), true);
+  assert.equal(componentMatchesFilters(fixtureComponent, byField), false); // doesn't match either positive filter
 });
 
 test('filterComponents returns everything unchanged when there are no active filters', () => {
