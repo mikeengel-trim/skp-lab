@@ -149,6 +149,16 @@ body {
 .saved-config-error { color: #c92a2a; font-size: 11.5px; }
 .saved-config-confirm-text { font-size: 12px; color: #333; }
 
+.calculated-columns-group { position: relative; }
+.calculated-column-edit-label { cursor: pointer; }
+.calculated-column-edit-label:hover { text-decoration: underline; }
+.calculated-column-inline {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; width: 100%;
+  padding-top: 4px;
+}
+.calculated-column-formula-input { flex: 1; min-width: 200px; font-family: monospace; }
+.calculated-column-hint { color: #888; font-size: 11px; flex-basis: 100%; }
+
 /* ─── Table ──────────────────────────────────────────────────────────── */
 
 .table-wrapper {

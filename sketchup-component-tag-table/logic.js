@@ -65,7 +65,15 @@ export function attributeFieldLabel(dict, key) {
 // already treats null as "no value", so a column/filter targeting a field
 // most components don't carry just quietly finds nothing for them rather
 // than erroring.
-export function getFieldValue(component, fieldId) {
+//
+// `context` (US-209) is how a calculated column plugs into this same seam:
+// `context.calculatedColumns` is a Map of fieldId -> { name, ast }, and a
+// fieldId found there is evaluated on demand rather than read off the
+// component directly. Every caller elsewhere in this file threads its own
+// `context` parameter through to here, defaulting to `{}` — a fieldId that
+// isn't a calculated column ignores it entirely, so nothing about the
+// existing built-in/Advanced-Attribute path changes when it's omitted.
+export function getFieldValue(component, fieldId, context = {}) {
   if (!component) return null;
   switch (fieldId) {
     case 'tag': return component.tag;
@@ -81,10 +89,41 @@ export function getFieldValue(component, fieldId) {
     case 'sizeHeight': return component.sizeHeight ?? null;
     case 'sizeDepth': return component.sizeDepth ?? null;
     default: {
+      if (context.calculatedColumns?.has(fieldId)) {
+        return evaluateCalculatedField(component, fieldId, context);
+      }
       const attr = decodeAttributeFieldId(fieldId);
       if (!attr) return null;
       return component.attributes?.[attr.dict]?.[attr.key] ?? null;
     }
+  }
+}
+
+// Evaluates one calculated column's formula for one component, resolving
+// each `{Label}` reference back through getFieldValue (recursively, so a
+// formula can reference another calculated column, a built-in, or an
+// Advanced Attribute all the same way) and converging every failure mode
+// — an unknown field label, a runtime circular reference that slipped past
+// wouldCreateCircularReference (e.g. from a saved config edited outside
+// this UI), division by zero, a non-numeric operand — into a single
+// `#ERROR: ...` string rather than letting it throw and break the whole
+// table's render. `context.visiting` is a defense-in-depth guard against
+// that runtime cycle case specifically: add/edit-time validation is the
+// primary defense, this is the fallback that keeps a corrupted config from
+// ever infinite-looping instead of just showing an error.
+function evaluateCalculatedField(component, fieldId, context) {
+  const calc = context.calculatedColumns.get(fieldId);
+  const visiting = context.visiting || new Set();
+  if (visiting.has(fieldId)) return '#ERROR: circular reference';
+  const nextContext = { ...context, visiting: new Set(visiting).add(fieldId) };
+  try {
+    return evaluateFormula(calc.ast, (label) => {
+      const refFieldId = context.fieldIdByLabel?.get(label);
+      if (!refFieldId) throw new FormulaError(`Unknown field {${label}}`);
+      return getFieldValue(component, refFieldId, nextContext);
+    });
+  } catch (e) {
+    return `#ERROR: ${e instanceof FormulaError ? e.message : 'evaluation failed'}`;
   }
 }
 
@@ -193,24 +232,24 @@ export function groupFiltersByField(filters) {
 // are present), AND it matches every one of that field's negated filters
 // (if any are present) — see groupFiltersByField above for why negated
 // filters AND instead of OR within a field.
-export function componentMatchesFilters(component, filtersByField) {
+export function componentMatchesFilters(component, filtersByField, context = {}) {
   for (const fieldFilters of filtersByField.values()) {
     const positive = fieldFilters.filter((f) => !isNegatedMatchType(f.matchType));
     const negated = fieldFilters.filter((f) => isNegatedMatchType(f.matchType));
     if (positive.length > 0) {
-      const matchesAny = positive.some((f) => filterMatches(getFieldValue(component, f.field), f));
+      const matchesAny = positive.some((f) => filterMatches(getFieldValue(component, f.field, context), f));
       if (!matchesAny) return false;
     }
-    const matchesAllNegated = negated.every((f) => filterMatches(getFieldValue(component, f.field), f));
+    const matchesAllNegated = negated.every((f) => filterMatches(getFieldValue(component, f.field, context), f));
     if (!matchesAllNegated) return false;
   }
   return true;
 }
 
-export function filterComponents(components, filters) {
+export function filterComponents(components, filters, context = {}) {
   const filtersByField = groupFiltersByField(filters);
   if (filtersByField.size === 0) return components;
-  return components.filter((c) => componentMatchesFilters(c, filtersByField));
+  return components.filter((c) => componentMatchesFilters(c, filtersByField, context));
 }
 
 // ─── Grouping by field ──────────────────────────────────────────────────
@@ -243,11 +282,11 @@ export function blankBucketLabel(fieldId) {
 // alternative, but that's a bigger, separate generalization; keeping the
 // second level fixed here means US-203's toggle keeps working unchanged on
 // top of whatever field the user now picks as the primary one.
-export function groupComponentsByField(components, fieldId, { byDefinition = false } = {}) {
+export function groupComponentsByField(components, fieldId, { byDefinition = false, context = {} } = {}) {
   const blankLabel = blankBucketLabel(fieldId);
   const groups = new Map(); // groupLabel -> component[]
   for (const component of components) {
-    const raw = getFieldValue(component, fieldId);
+    const raw = getFieldValue(component, fieldId, context);
     const label = raw !== null && raw !== undefined && String(raw).trim() !== '' ? String(raw) : blankLabel;
     if (!groups.has(label)) groups.set(label, []);
     groups.get(label).push(component);
@@ -332,10 +371,10 @@ export function isNumericValue(raw) {
 // open question 6). A field with zero values anywhere defaults to text
 // (an empty numeric column would just show a row of "0"s, which is more
 // misleading than a row of blanks).
-export function isFieldNumeric(components, fieldId) {
+export function isFieldNumeric(components, fieldId, context = {}) {
   let sawValue = false;
   for (const component of components) {
-    const value = getFieldValue(component, fieldId);
+    const value = getFieldValue(component, fieldId, context);
     if (value === null || value === undefined || value === '') continue;
     sawValue = true;
     if (!isNumericValue(value)) return false;
@@ -353,10 +392,10 @@ export const MIXED_VALUE_THRESHOLD = 3;
 //   - more than that -> { type: 'mixed', values, count } — `values` is kept
 //     (not discarded) so the UI can still show the full list on demand
 //     (user story 23's "expand on demand"), it just doesn't show by default.
-export function aggregateColumn(components, fieldId, isNumeric) {
+export function aggregateColumn(components, fieldId, isNumeric, context = {}) {
   const values = [];
   for (const component of components) {
-    const value = getFieldValue(component, fieldId);
+    const value = getFieldValue(component, fieldId, context);
     if (value === null || value === undefined || value === '') continue;
     values.push(value);
   }
@@ -422,4 +461,242 @@ export function pruneMissingFields(config, knownFieldIds) {
     filters: config.filters.filter((filter) => known.has(filter.field)),
     groupByField: known.has(config.groupByField) ? config.groupByField : 'tag',
   };
+}
+
+// ─── Calculated columns (US-209) ───────────────────────────────────────────
+//
+// A small, hand-rolled recursive-descent parser/evaluator for a minimal
+// arithmetic-and-comparison grammar — deliberately NOT `eval()`/
+// `new Function()` against the raw formula string, since a formula can
+// arrive via a saved/shared table configuration (US-207/US-208) and get
+// evaluated automatically the moment that configuration loads, with no
+// review step in between. That makes a raw formula string untrusted-ish
+// input, and eval()/new Function() on untrusted input is a real
+// code-injection surface — this grammar can only ever produce arithmetic,
+// so there's nothing in it capable of reaching outside this evaluator.
+//
+//   expression  := comparison
+//   comparison  := additive (('==' | '!=' | '<=' | '>=' | '<' | '>') additive)?
+//   additive    := multiplicative (('+' | '-') multiplicative)*
+//   multiplicative := unary (('*' | '/') unary)*
+//   unary       := '-' unary | primary
+//   primary     := NUMBER | STRING | FIELD_REF | '(' expression ')'
+//
+// A field reference is written `{Field Label}` — the exact label shown in
+// the column/filter/group-by pickers (e.g. `{Tag}`, `{IFC → Cost}`,
+// `{Transform → X (in)}`), not this extension's internal field id, so a
+// formula reads naturally without knowing how Advanced Attribute ids are
+// encoded. A double-quoted string literal has no escape handling (a label
+// or comparison value containing a literal `"` isn't supported) — a
+// deliberately minimal grammar, not a general-purpose language.
+export class FormulaError extends Error {}
+
+function tokenizeFormula(source) {
+  const tokens = [];
+  let i = 0;
+  while (i < source.length) {
+    const c = source[i];
+    if (/\s/.test(c)) { i++; continue; }
+    if (c === '{') {
+      const end = source.indexOf('}', i);
+      if (end === -1) throw new FormulaError(`Unterminated field reference starting at position ${i}`);
+      tokens.push({ type: 'fieldRef', value: source.slice(i + 1, end).trim(), pos: i });
+      i = end + 1;
+      continue;
+    }
+    if (c === '"') {
+      const end = source.indexOf('"', i + 1);
+      if (end === -1) throw new FormulaError(`Unterminated string literal starting at position ${i}`);
+      tokens.push({ type: 'string', value: source.slice(i + 1, end), pos: i });
+      i = end + 1;
+      continue;
+    }
+    if (/[0-9.]/.test(c)) {
+      let j = i;
+      while (j < source.length && /[0-9.]/.test(source[j])) j++;
+      const numStr = source.slice(i, j);
+      if (!/^\d+(\.\d+)?$/.test(numStr)) throw new FormulaError(`Invalid number "${numStr}" at position ${i}`);
+      tokens.push({ type: 'number', value: Number(numStr), pos: i });
+      i = j;
+      continue;
+    }
+    const twoChar = source.slice(i, i + 2);
+    const TWO_CHAR_OPS = { '==': 'eq', '!=': 'neq', '<=': 'lte', '>=': 'gte' };
+    if (TWO_CHAR_OPS[twoChar]) { tokens.push({ type: TWO_CHAR_OPS[twoChar], pos: i }); i += 2; continue; }
+    const ONE_CHAR_OPS = { '(': 'lparen', ')': 'rparen', '+': 'plus', '-': 'minus', '*': 'star', '/': 'slash', '<': 'lt', '>': 'gt' };
+    if (ONE_CHAR_OPS[c]) { tokens.push({ type: ONE_CHAR_OPS[c], pos: i }); i++; continue; }
+    throw new FormulaError(`Unexpected character "${c}" at position ${i}`);
+  }
+  return tokens;
+}
+
+// Parses a formula string into an AST, throwing FormulaError for any
+// syntax problem — the caller (app.js's "Add Calculated Column" UI) parses
+// eagerly when a formula is entered, so an invalid formula is flagged in
+// the column-definition UI itself, before it's ever added as a column.
+export function parseFormula(source) {
+  const tokens = tokenizeFormula(source);
+  let pos = 0;
+  const peek = () => tokens[pos];
+  const next = () => tokens[pos++];
+
+  function parsePrimary() {
+    const t = peek();
+    if (!t) throw new FormulaError('Unexpected end of formula');
+    if (t.type === 'number') { next(); return { type: 'number', value: t.value }; }
+    if (t.type === 'string') { next(); return { type: 'string', value: t.value }; }
+    if (t.type === 'fieldRef') { next(); return { type: 'fieldRef', label: t.value }; }
+    if (t.type === 'lparen') {
+      next();
+      const expr = parseComparison();
+      if (!peek() || peek().type !== 'rparen') throw new FormulaError(`Expected ")" at position ${peek()?.pos ?? source.length}`);
+      next();
+      return expr;
+    }
+    throw new FormulaError(`Unexpected token at position ${t.pos}`);
+  }
+
+  function parseUnary() {
+    if (peek()?.type === 'minus') { next(); return { type: 'negate', operand: parseUnary() }; }
+    return parsePrimary();
+  }
+
+  function parseMultiplicative() {
+    let node = parseUnary();
+    while (peek() && (peek().type === 'star' || peek().type === 'slash')) {
+      const op = next().type === 'star' ? '*' : '/';
+      node = { type: 'binary', op, left: node, right: parseUnary() };
+    }
+    return node;
+  }
+
+  function parseAdditive() {
+    let node = parseMultiplicative();
+    while (peek() && (peek().type === 'plus' || peek().type === 'minus')) {
+      const op = next().type === 'plus' ? '+' : '-';
+      node = { type: 'binary', op, left: node, right: parseMultiplicative() };
+    }
+    return node;
+  }
+
+  const COMPARISON_OPS = { eq: '==', neq: '!=', lte: '<=', gte: '>=', lt: '<', gt: '>' };
+  function parseComparison() {
+    let node = parseAdditive();
+    if (peek() && COMPARISON_OPS[peek().type]) {
+      const op = COMPARISON_OPS[next().type];
+      node = { type: 'compare', op, left: node, right: parseAdditive() };
+    }
+    return node;
+  }
+
+  if (tokens.length === 0) throw new FormulaError('Formula is empty');
+  const ast = parseComparison();
+  if (pos < tokens.length) throw new FormulaError(`Unexpected token at position ${tokens[pos].pos}`);
+  return ast;
+}
+
+// Every `{Label}` a formula's AST references, in encounter order with
+// duplicates removed — used both to resolve field values during evaluation
+// and to build the calculated-column dependency graph for circular-
+// reference detection below.
+export function extractFormulaFieldRefs(ast) {
+  const labels = [];
+  const seen = new Set();
+  function walk(node) {
+    if (!node) return;
+    if (node.type === 'fieldRef') {
+      if (!seen.has(node.label)) { seen.add(node.label); labels.push(node.label); }
+      return;
+    }
+    if (node.type === 'negate') { walk(node.operand); return; }
+    if (node.type === 'binary' || node.type === 'compare') { walk(node.left); walk(node.right); }
+  }
+  walk(ast);
+  return labels;
+}
+
+// Evaluates a parsed formula AST against one component. `resolveFieldRef`
+// maps a `{Label}` reference to that field's raw value — injected rather
+// than this module reaching into getFieldValue/knownFields itself, so this
+// evaluator has zero dependency on the field-registry shape and stays
+// trivially unit-testable with a plain lookup function. Throws FormulaError
+// for any per-component evaluation failure (missing/unknown field,
+// non-numeric operand in an arithmetic op, division by zero) — the caller
+// (getFieldValue) catches this and returns an error marker rather than
+// letting it propagate and break the whole table's render.
+export function evaluateFormula(ast, resolveFieldRef) {
+  function toNumber(value, label) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))) return Number(value);
+    throw new FormulaError(`${label ? `{${label}}` : 'value'} is not numeric`);
+  }
+  function evalNode(node) {
+    switch (node.type) {
+      case 'number': return node.value;
+      case 'string': return node.value;
+      case 'fieldRef': {
+        const value = resolveFieldRef(node.label);
+        if (value === null || value === undefined) throw new FormulaError(`{${node.label}} has no value for this component`);
+        return value;
+      }
+      case 'negate': return -toNumber(evalNode(node.operand));
+      case 'binary': {
+        const left = toNumber(evalNode(node.left));
+        const right = toNumber(evalNode(node.right));
+        if (node.op === '+') return left + right;
+        if (node.op === '-') return left - right;
+        if (node.op === '*') return left * right;
+        if (node.op === '/') {
+          if (right === 0) throw new FormulaError('Division by zero');
+          return left / right;
+        }
+        break;
+      }
+      case 'compare': {
+        const left = evalNode(node.left);
+        const right = evalNode(node.right);
+        if (node.op === '==') return String(left) === String(right);
+        if (node.op === '!=') return String(left) !== String(right);
+        const leftNum = toNumber(left);
+        const rightNum = toNumber(right);
+        if (node.op === '<') return leftNum < rightNum;
+        if (node.op === '>') return leftNum > rightNum;
+        if (node.op === '<=') return leftNum <= rightNum;
+        if (node.op === '>=') return leftNum >= rightNum;
+        break;
+      }
+    }
+    throw new FormulaError('Unrecognized formula node');
+  }
+  return evalNode(ast);
+}
+
+// Detects whether a calculated column named `columnName`, whose formula
+// references the field labels in `formulaFieldRefs`, would create a
+// circular dependency among calculated columns — i.e. whether some
+// referenced calculated column transitively references `columnName` back.
+// `existingColumns` is every OTHER current calculated column (excluding
+// the one being added/edited): `{ name, formula }` objects. Re-parses each
+// existing column's own formula on demand rather than requiring its field
+// refs to be precomputed/stored — this only ever runs once, at
+// add/edit-time, never per render, so the extra parsing is negligible.
+// A column with its own unparseable formula can't propagate a cycle
+// through itself, so it's skipped rather than treated as an error here.
+export function wouldCreateCircularReference(columnName, formulaFieldRefs, existingColumns) {
+  const byName = new Map(existingColumns.map((c) => [c.name, c]));
+  const visited = new Set();
+  function reaches(refs) {
+    for (const label of refs) {
+      if (label === columnName) return true;
+      if (visited.has(label)) continue;
+      visited.add(label);
+      const referenced = byName.get(label);
+      if (!referenced) continue;
+      let refAst;
+      try { refAst = parseFormula(referenced.formula); } catch { continue; }
+      if (reaches(extractFormulaFieldRefs(refAst))) return true;
+    }
+    return false;
+  }
+  return reaches(formulaFieldRefs);
 }

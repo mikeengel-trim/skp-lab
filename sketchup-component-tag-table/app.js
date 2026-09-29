@@ -26,6 +26,10 @@ import {
   formatColumnCell,
   sortSavedConfigs,
   pruneMissingFields,
+  FormulaError,
+  parseFormula,
+  extractFormulaFieldRefs,
+  wouldCreateCircularReference,
 } from './logic.js';
 
 // ─── Model walk ─────────────────────────────────────────────────────────
@@ -201,7 +205,15 @@ function defaultState() {
   // (if any) is currently highlighted in the US-208 dropdown — a cosmetic
   // pointer, not the source of truth for what's loaded (see the "Relates
   // to existing auto-save" decision below).
-  return { columns: ['definitionName'], filters: [], groupByDefinition: false, groupByField: 'tag', selectedConfigId: null };
+  return {
+    columns: ['definitionName'], filters: [], groupByDefinition: false, groupByField: 'tag',
+    selectedConfigId: null, calculatedColumns: [],
+  };
+}
+
+function validCalculatedColumns(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((c) => c && typeof c.id === 'string' && typeof c.name === 'string' && typeof c.formula === 'string');
 }
 
 function loadState() {
@@ -216,6 +228,10 @@ function loadState() {
       groupByDefinition: !!parsed.groupByDefinition,
       groupByField: typeof parsed.groupByField === 'string' && parsed.groupByField ? parsed.groupByField : 'tag',
       selectedConfigId: typeof parsed.selectedConfigId === 'string' ? parsed.selectedConfigId : null,
+      // US-209: calculated column definitions (name + formula) persist the
+      // same way regular column selections do — see the acceptance
+      // criterion this satisfies in todo.md.
+      calculatedColumns: validCalculatedColumns(parsed.calculatedColumns),
     };
   } catch (e) {
     console.warn('[Component Table] could not read saved state, using defaults', e);
@@ -225,7 +241,7 @@ function loadState() {
 
 function saveState() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ columns, filters, groupByDefinition, groupByField, selectedConfigId }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ columns, filters, groupByDefinition, groupByField, selectedConfigId, calculatedColumns }));
   } catch (e) {
     console.warn('[Component Table] could not save state', e);
   }
@@ -265,13 +281,51 @@ function saveSavedConfigs() {
   }
 }
 
-let { columns, filters, groupByDefinition, groupByField, selectedConfigId } = loadState();
+let { columns, filters, groupByDefinition, groupByField, selectedConfigId, calculatedColumns } = loadState();
 let savedConfigs = loadSavedConfigs();
 // Grows over the session as collectComponents discovers Advanced
 // Attributes actually present in the model. Seeded with the always-
 // available built-ins so every picker has options even before the first
-// successful read.
+// successful read. Calculated columns (US-209) are merged in below, right
+// after knownFields exists to merge into.
 let knownFields = [...BUILTIN_FIELDS];
+
+// id -> { name, ast } for every calculated column whose formula still
+// parses (a formula edited to be invalid outside this UI — e.g. a hand-
+// edited localStorage blob — is skipped here rather than crashing the
+// whole extension on load; see rebuildCalculatedColumnsById).
+let calculatedColumnsById = new Map();
+
+function rebuildCalculatedColumnsById() {
+  calculatedColumnsById = new Map();
+  for (const calc of calculatedColumns) {
+    try {
+      calculatedColumnsById.set(calc.id, { name: calc.name, ast: parseFormula(calc.formula) });
+    } catch (e) {
+      console.warn(`[Component Table] calculated column "${calc.name}" has an invalid formula, skipping`, e);
+    }
+  }
+}
+rebuildCalculatedColumnsById();
+// Only touches (and re-sorts) knownFields if there's actually a saved
+// calculated column to merge in — preserves BUILTIN_FIELDS' original
+// insertion order (Tag first) for everyone with none, exactly as before
+// this story, rather than unconditionally alphabetizing on every load.
+if (calculatedColumns.length > 0) {
+  for (const calc of calculatedColumns) knownFields.push({ id: calc.id, label: calc.name });
+  knownFields.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
+}
+
+// The context object every getFieldValue-consuming call in the render
+// pipeline threads through (see logic.js) — rebuilt fresh each render since
+// knownFields/calculatedColumns can change between renders (a new Advanced
+// Attribute discovered, a calculated column added/edited/removed).
+function buildFieldContext() {
+  return {
+    calculatedColumns: calculatedColumnsById,
+    fieldIdByLabel: new Map(knownFields.map((f) => [f.label, f.id])),
+  };
+}
 let allComponents = [];
 let lastTruncated = false;
 
@@ -668,6 +722,9 @@ function currentConfigValues() {
     filters: filters.map((f) => ({ ...f })),
     groupByField,
     groupByDefinition,
+    // US-209: calculated column definitions travel with a named
+    // configuration too, per that story's own Persistence criterion.
+    calculatedColumns: calculatedColumns.map((c) => ({ ...c })),
   };
 }
 
@@ -701,12 +758,25 @@ function overwriteSavedConfig(id, name) {
 function loadSavedConfig(id) {
   const config = savedConfigs.find((c) => c.id === id);
   if (!config) return;
+
+  // Restore this config's OWN calculated column definitions first, merging
+  // them into knownFields, so pruneMissingFields (below) recognizes them as
+  // valid column/filter/group-by targets — otherwise they'd look "missing"
+  // just because this session hasn't seen them until now, and get dropped
+  // by the very degradation logic meant for genuinely-missing fields.
+  calculatedColumns = validCalculatedColumns(config.calculatedColumns);
+  knownFields = knownFields.filter((f) => !f.id.startsWith('calc-'));
+  for (const calc of calculatedColumns) knownFields.push({ id: calc.id, label: calc.name });
+  knownFields.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
+  rebuildCalculatedColumnsById();
+
   const pruned = pruneMissingFields(config, knownFields.map((f) => f.id));
   columns = pruned.columns;
   filters = pruned.filters;
   groupByField = pruned.groupByField;
   groupByDefinition = !!pruned.groupByDefinition;
   saveState();
+  renderCalculatedColumnsList();
   renderColumnsBar();
   renderFilters();
   renderGroupByFieldSelect();
@@ -778,15 +848,164 @@ el('delete-config-btn').addEventListener('click', () => {
   });
 });
 
+// ─── Calculated columns (US-209) ─────────────────────────────────────────
+//
+// Once defined here, a calculated column is added to `knownFields` exactly
+// like an Advanced Attribute field — it then flows through the SAME
+// column-picker/filter-field/group-by-field UI as everything else, and the
+// SAME getFieldValue seam (via buildFieldContext) gives it filtering,
+// numeric-sum/text-list aggregation, and Mixed (N) expand behavior "for
+// free," per this story's own "Integrates with Existing Pipeline"
+// requirement. This section only handles DEFINING one (name + formula);
+// adding it as a shown column/filter/group-by happens through those
+// existing pickers, unchanged.
+
+function renderCalculatedColumnsList() {
+  const list = el('calculated-columns-list');
+  list.innerHTML = '';
+  for (const calc of calculatedColumns) {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+
+    const label = document.createElement('span');
+    label.className = 'chip-label calculated-column-edit-label';
+    label.textContent = calc.name;
+    label.title = calc.formula;
+    label.addEventListener('click', () => {
+      showCalculatedColumnForm({ editingId: calc.id, initialName: calc.name, initialFormula: calc.formula });
+    });
+
+    const remove = document.createElement('button');
+    remove.className = 'chip-btn chip-remove';
+    remove.textContent = '✕';
+    remove.title = 'Delete calculated column';
+    remove.addEventListener('click', () => {
+      calculatedColumns = calculatedColumns.filter((c) => c.id !== calc.id);
+      knownFields = knownFields.filter((f) => f.id !== calc.id);
+      columns = columns.filter((c) => c !== calc.id);
+      filters = filters.filter((f) => f.field !== calc.id);
+      if (groupByField === calc.id) groupByField = 'tag';
+      rebuildCalculatedColumnsById();
+      saveState();
+      renderCalculatedColumnsList();
+      renderColumnsBar();
+      renderFilters();
+      renderGroupByFieldSelect();
+      updateGroupByDefinitionLabel();
+      renderTable();
+    });
+
+    chip.append(label, remove);
+    list.appendChild(chip);
+  }
+}
+
+function hideCalculatedColumnInline() {
+  const container = el('calculated-column-inline');
+  container.hidden = true;
+  container.innerHTML = '';
+}
+
+// Shared by both "+ Add calculated column…" (no `editingId`) and clicking
+// an existing chip's label to edit it.
+function showCalculatedColumnForm({ editingId, initialName, initialFormula }) {
+  const container = el('calculated-column-inline');
+  container.innerHTML = '';
+  container.hidden = false;
+
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.className = 'saved-config-name-input';
+  nameInput.placeholder = 'Column name…';
+  nameInput.value = initialName || '';
+
+  const formulaInput = document.createElement('input');
+  formulaInput.type = 'text';
+  formulaInput.className = 'saved-config-name-input calculated-column-formula-input';
+  formulaInput.placeholder = 'Formula, e.g. {Cost} * {Quantity}';
+  formulaInput.value = initialFormula || '';
+
+  const errorText = document.createElement('span');
+  errorText.className = 'saved-config-error';
+
+  const submitBtn = document.createElement('button');
+  submitBtn.className = 'btn-add';
+  submitBtn.textContent = editingId ? 'Save' : 'Add';
+  submitBtn.addEventListener('click', () => {
+    const name = nameInput.value.trim();
+    const formula = formulaInput.value.trim();
+    errorText.textContent = '';
+    if (!name) { errorText.textContent = 'Enter a name.'; return; }
+    if (!formula) { errorText.textContent = 'Enter a formula.'; return; }
+
+    const nameCollision = calculatedColumns.find((c) => c.name === name && c.id !== editingId);
+    if (nameCollision) { errorText.textContent = `A calculated column named "${name}" already exists.`; return; }
+
+    // Invalid syntax is flagged here, in the definition UI, before the
+    // column is ever added — per this story's Error Handling criterion.
+    let ast;
+    try {
+      ast = parseFormula(formula);
+    } catch (e) {
+      errorText.textContent = e instanceof FormulaError ? e.message : 'Invalid formula.';
+      return;
+    }
+
+    const fieldRefs = extractFormulaFieldRefs(ast);
+    const otherCalculatedColumns = calculatedColumns.filter((c) => c.id !== editingId);
+    if (wouldCreateCircularReference(name, fieldRefs, otherCalculatedColumns)) {
+      errorText.textContent = 'This formula creates a circular reference with another calculated column.';
+      return;
+    }
+
+    if (editingId) {
+      const existing = calculatedColumns.find((c) => c.id === editingId);
+      existing.name = name;
+      existing.formula = formula;
+      const fieldEntry = knownFields.find((f) => f.id === editingId);
+      if (fieldEntry) fieldEntry.label = name;
+    } else {
+      const id = makeId('calc');
+      calculatedColumns.push({ id, name, formula });
+      knownFields.push({ id, label: name });
+    }
+    knownFields.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
+    rebuildCalculatedColumnsById();
+    saveState();
+    renderCalculatedColumnsList();
+    renderColumnsBar();
+    renderFilters();
+    renderGroupByFieldSelect();
+    hideCalculatedColumnInline();
+    renderTable();
+  });
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'btn-link';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.addEventListener('click', hideCalculatedColumnInline);
+
+  const hint = document.createElement('span');
+  hint.className = 'calculated-column-hint';
+  hint.textContent = 'Reference a field by its label in curly braces, e.g. {Tag} or {IFC → Cost}. Supports + - * / ( ), comparisons (== != < > <= >=), and "quoted strings".';
+
+  container.append(nameInput, formulaInput, submitBtn, cancelBtn, hint, errorText);
+  nameInput.focus();
+}
+
+el('add-calculated-column-btn').addEventListener('click', () => {
+  showCalculatedColumnForm({});
+});
+
 // ─── Table rendering ────────────────────────────────────────────────────
 
 // Renders one aggregated-column cell into `row`, wiring up the Mixed (N)
 // expand-on-click behavior keyed by `cellKey`. Shared between the flat
 // (single-field) and two-level (<field> → Definition Name) render paths
 // below so the expand behavior works identically at either grouping depth.
-function appendAggregatedCells(row, groupComponents, numericByColumn, cellKeyPrefix) {
+function appendAggregatedCells(row, groupComponents, numericByColumn, cellKeyPrefix, context) {
   for (const fieldId of columns) {
-    const summary = aggregateColumn(groupComponents, fieldId, numericByColumn.get(fieldId));
+    const summary = aggregateColumn(groupComponents, fieldId, numericByColumn.get(fieldId), context);
     const cellKey = `${cellKeyPrefix}::${fieldId}`;
     const expanded = expandedCells.has(cellKey);
     const cell = td(formatColumnCell(summary, expanded));
@@ -805,8 +1024,9 @@ function appendAggregatedCells(row, groupComponents, numericByColumn, cellKeyPre
 }
 
 function renderTable() {
-  const filtered = filterComponents(allComponents, filters.filter((f) => f.text.trim() !== ''));
-  const groups = groupComponentsByField(filtered, groupByField, { byDefinition: groupByDefinition });
+  const context = buildFieldContext();
+  const filtered = filterComponents(allComponents, filters.filter((f) => f.text.trim() !== ''), context);
+  const groups = groupComponentsByField(filtered, groupByField, { byDefinition: groupByDefinition, context });
   const blankLabel = blankBucketLabel(groupByField);
 
   const wrapper = el('table-wrapper');
@@ -827,7 +1047,7 @@ function renderTable() {
   // Numeric-vs-text is decided once per column across the whole filtered
   // set (not per group, and not per definition sub-group either), so a
   // column can't flip type row to row — see logic.js isFieldNumeric.
-  const numericByColumn = new Map(columns.map((fieldId) => [fieldId, isFieldNumeric(filtered, fieldId)]));
+  const numericByColumn = new Map(columns.map((fieldId) => [fieldId, isFieldNumeric(filtered, fieldId, context)]));
 
   const groupFieldHeaderLabel = fieldLabel(groupByField);
   const thead = el('component-table-head');
@@ -852,7 +1072,7 @@ function renderTable() {
 
       row.appendChild(td(group.groupLabel));
       row.appendChild(td(String(group.components.length), 'count-cell'));
-      appendAggregatedCells(row, group.components, numericByColumn, group.groupLabel);
+      appendAggregatedCells(row, group.components, numericByColumn, group.groupLabel, context);
       tbody.appendChild(row);
       continue;
     }
@@ -872,7 +1092,7 @@ function renderTable() {
       row.appendChild(td(subIndex === 0 ? group.groupLabel : ''));
       row.appendChild(td(sub.definitionLabel));
       row.appendChild(td(String(sub.components.length), 'count-cell'));
-      appendAggregatedCells(row, sub.components, numericByColumn, `${group.groupLabel}::${sub.definitionLabel}`);
+      appendAggregatedCells(row, sub.components, numericByColumn, `${group.groupLabel}::${sub.definitionLabel}`, context);
       tbody.appendChild(row);
     });
   }
@@ -1027,6 +1247,7 @@ renderFilters();
 renderGroupByFieldSelect();
 updateGroupByDefinitionLabel();
 renderSavedConfigsSelect();
+renderCalculatedColumnsList();
 
 async function init() {
   try {

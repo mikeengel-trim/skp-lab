@@ -117,6 +117,36 @@ model's content.
   field the currently-open model hasn't discovered, loading it drops that
   column/filter (and falls the group-by field back to Tag, if that's what's
   missing) instead of crashing.
+- **Calculated columns from a user-defined formula** (US-209). A
+  "Calculated Columns" toolbar lets you define a named column backed by a
+  formula referencing other fields by their label in curly braces (e.g.
+  `{Cost} * {Quantity}`, `{Size → Width (in)} / 12`) — arithmetic
+  (`+ - * /`, parentheses), comparisons (`== != < > <= >=`), and
+  `"quoted strings"` are supported. Once defined, it appears in the column/
+  filter/group-by pickers exactly like any other field, and gets filtering,
+  numeric-sum/text-list aggregation, and `Mixed (N)` expand "for free"
+  through the same `getFieldValue` seam every other field uses — nothing
+  calculated is ever written back to the model or cached; it's recomputed
+  from live data every render. Formulas are evaluated by a small hand-
+  rolled parser/evaluator, **never** `eval()`/`new Function()` on the raw
+  string — a saved/shared table configuration (US-207/US-208) can carry a
+  formula that gets evaluated automatically the moment it loads, with no
+  review step, so treating that string as code the JS engine itself runs
+  would be a real injection surface. An invalid formula is flagged in the
+  definition UI itself, before it's ever added as a column; a formula that
+  fails for a specific component (a referenced field with no value there,
+  division by zero, a non-numeric operand) renders `#ERROR: ...` for that
+  cell rather than crashing the table — though since that's not `null`, it
+  counts toward that column's overall numeric-vs-text classification the
+  same as any other non-numeric value would (a column with even one
+  erroring component won't sum for the rest; instead it lists/mixes text
+  values, `#ERROR: ...` included). A calculated column can reference
+  another calculated column; a formula that would create a circular
+  reference (directly or transitively) is rejected with a clear error
+  before it's saved, with a runtime cycle guard as defense-in-depth for a
+  hand-edited/corrupted saved configuration that slipped past that check.
+  Calculated column definitions persist the same way columns do
+  (`localStorage`), and travel with a named saved table configuration too.
 
 ## PRD decisions made for v1
 
@@ -143,6 +173,11 @@ resolved for this build:
 | Client target | Runs anywhere JSA runs (Web, Desktop, iPad) — same as every other extension in this repo | No client-specific code; nothing in this build depends on a platform capability. |
 | Built-in field audit (US-206) | **Transform (X/Y/Z translation) and Size (Width/Height/Depth) are real, already-computed properties** (`ComponentInstance.transform`/`.bounds`) — added as six scalar built-ins. **`locked`/`hidden` are also real** built-in booleans this audit found but did not add: a boolean field doesn't fit this extension's numeric-sum/text-list column model without its own design question this story didn't ask to resolve. | Confirmed against the live JSA API reference plus `sketchup-tag-color-viewer`'s own source-verified corrections to it — that reference doc's prose already claims two properties that don't match the real SDK (`ObserverHandle.end()`, `ComponentInstance.transformation`); both are wrong, the real ones are `.stop()`/`.endStream()` and `.transform`. |
 | Area (US-206) | **Not implemented — deferred.** Area is not a real per-component/per-definition property; only `Face.area` exists. Computing a component's area would mean walking its own faces (excluding nested sub-instances') on every read | This extension has no real SketchUp session available to validate whether that per-instance face-walk introduces visible live-update lag on a large model — exactly the risk this story's own spike asked to resolve before implementing. Shipping Transform/Size (both free reads) now and deferring Area until it can be measured against a real model was the responsible call over guessing. |
+| Calculated column formula language (US-209) | **A small, hand-rolled recursive-descent parser/evaluator** — `+ - * /`, parentheses, `== != < > <= >=` comparisons, `"strings"` — not `eval()`/`new Function()` | A formula can arrive via a saved/shared table configuration and get evaluated automatically the instant that config loads, with no review step — that makes the raw string untrusted-ish input, and running it through the JS engine itself (`eval`/`new Function`) is a real code-injection surface a small grammar this constrained simply can't be. |
+| Calculated column field reference syntax (US-209) | **`{Field Label}`** — the exact label already shown in the column/filter/group-by pickers, e.g. `{Tag}`, `{IFC → Cost}`, `{Transform → X (in)}` | Reads naturally without a user needing to know this extension's internal field-id encoding (especially the URI-encoded `attribute::dict::key` scheme for Advanced Attributes) — the UI already always shows labels, never raw ids. |
+| Calculated columns referencing other calculated columns / circular references (US-209) | **Allowed to reference each other; a circular reference (direct or transitive) is rejected at definition time** with a clear inline error, plus a runtime cycle guard as defense-in-depth | Composability (a "Total Cost" column referencing a "Unit Cost" column) is genuinely useful and falls out for free from routing calculated-column evaluation back through the same `getFieldValue` seam every field uses — rejecting cycles up front (rather than allowing them and crashing/hanging) was the only responsible option once composition was allowed at all. |
+| Calculated column result type (US-209) | **Inferred from evaluated results**, exactly like every other field (Advanced Attributes included) — no declared type | Consistent with this extension's existing "no declared attribute type to read" stance (see the numeric vs. text detection decision below); a calculated column plugging into the same `isFieldNumeric`/`aggregateColumn` seam as any other field was also this story's own explicit design requirement. |
+| Calculated column per-component errors (US-209) | **A `#ERROR: ...` string marker for that cell** — not a crash, not a silently blank/wrong value. Since it's a string (not `null`), it participates in that column's numeric-vs-text inference like any other non-numeric value would | A per-component formula failure (missing referenced value, division by zero, non-numeric operand) has to surface somewhere visible rather than being swallowed — the tradeoff is that one erroring component makes its whole column render as text/list instead of summing the rest, which is the same uniform-column-type behavior every other field here already has, not a special case invented for this one. |
 
 ## Layout
 
@@ -155,8 +190,8 @@ sketchup-component-table/
 ├── app.js              # model walk (JSA calls) + DOM wiring; imports logic.js
 ├── icon.svg             # extension + command icon
 └── verify/               # pure-logic + DOM sanity tests
-    ├── verify.mjs         # imports logic.js directly, 55 assertions
-    ├── verify-dom.mjs      # loads the real index.html/app.js into jsdom, 91 assertions
+    ├── verify.mjs         # imports logic.js directly, 70 assertions
+    ├── verify-dom.mjs      # loads the real index.html/app.js into jsdom, 107 assertions
     └── package.json
 ```
 
@@ -192,7 +227,7 @@ npm install
 npm test
 ```
 
-`verify.mjs` (55 assertions) covers field id encode/decode, attribute
+`verify.mjs` (70 assertions) covers field id encode/decode, attribute
 flattening/merging, filter matching (all four match types, non-string value
 coercion), the OR-within-field/AND-across-field filter combination, generic
 field grouping (`groupComponentsByField` — the Tag-preserving `Untagged`
@@ -201,13 +236,19 @@ bucket, a non-Tag built-in field, an Advanced Attribute field, the generic
 any of those — US-210/US-211), row-to-model selection's
 `getSelectionEntities` helper (US-204), saved-table-configuration helpers
 `sortSavedConfigs`/`pruneMissingFields` (US-207/US-208), the Transform/Size
-built-in fields including their `null`-when-absent behavior (US-206),
-numeric-value/numeric-field detection, and column aggregation (empty/sum/
-single/list/mixed, including the `Mixed (N)` threshold, its expand-on-demand
-formatting, and the 4-decimal-place rounding a summed value gets before
-display).
+built-in fields including their `null`-when-absent behavior (US-206), the
+calculated-column formula parser/evaluator (US-209 — arithmetic, operator
+precedence, comparisons including string equality, syntax-error rejection,
+per-component evaluation errors for a missing reference/division-by-zero/
+non-numeric operand, `extractFormulaFieldRefs`, direct and transitive
+`wouldCreateCircularReference` detection, and `getFieldValue`/
+`aggregateColumn` evaluating a calculated field end-to-end including its
+runtime circular-reference guard), numeric-value/numeric-field detection,
+and column aggregation (empty/sum/single/list/mixed, including the
+`Mixed (N)` threshold, its expand-on-demand formatting, and the
+4-decimal-place rounding a summed value gets before display).
 
-`verify-dom.mjs` (91 assertions) loads the real shipped `index.html` into
+`verify-dom.mjs` (107 assertions) loads the real shipped `index.html` into
 jsdom and confirms every element id `app.js` looks up actually exists in the
 markup, starting UI state (banners hidden, Refresh disabled, empty
 containers), plus regression guards: this extension makes no model-mutating
@@ -262,6 +303,16 @@ scenario below reuses the same loaded instance rather than re-importing):
   drops it and falls the group-by field back to Tag rather than crashing;
   and deleting every saved config leaves the dropdown in its documented
   empty state.
+- **Calculated columns (US-209):** defining one via the toolbar's inline
+  form makes it a real selectable column that sums correctly through the
+  same pipeline as any other field; a formula referencing an unknown field
+  renders `#ERROR: ...` for that cell instead of crashing; an unparseable
+  formula is rejected in the definition UI itself, before it's added;
+  defining a second calculated column that would circularly reference the
+  first is rejected with a clear inline error; editing (renaming) a
+  calculated column updates its chip and the table's column header; and
+  deleting one removes it from the picker, the shown columns, and the
+  table header.
 
 This execution approach is possible here specifically because the mocked
 JSA calls (Selection, tag/material lookups, the tree walk) are all trivially
