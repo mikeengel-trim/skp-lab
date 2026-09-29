@@ -20,7 +20,7 @@ Sample prompt to kickoff work by claude based on the Todo.md
   already used the confirmed-correct `getTagByName(name)`. Fixed both call
   sites to use `getTagByName`, matching `addTagsByTheme()`.
 
-- [ ] **US-101: Space spacing/grid placement**
+- [x] **US-101: Space spacing/grid placement**
   As a user placing multiple copies of a space, I want each copy offset from
   the last instead of stacked at the origin, so that I don't have to manually
   drag 50 overlapping boxes apart before I can see or use them.
@@ -61,7 +61,7 @@ Sample prompt to kickoff work by claude based on the Todo.md
     - Errors clear as soon as the field becomes valid, without needing to
       click elsewhere.
 
-- [ ] **US-104: Warn on duplicate space name in the active model**
+- [x] **US-104: Warn on duplicate space name in the active model**
   As a user placing a space, I want a warning if a definition with the same
   name already exists in the model, so that I don't accidentally create a
   confusing near-duplicate.
@@ -86,7 +86,7 @@ Sample prompt to kickoff work by claude based on the Todo.md
       uploaded file isn't available across sessions) — it always falls back
       to the default state.
 
-- [ ] **US-106: Confirm before placing a large count**
+- [x] **US-106: Confirm before placing a large count**
   As a user who bumps Count up with the stepper, I want a confirmation step
   before placing an unusually large number of copies, so that I don't
   accidentally flood the model and have to undo/clean up.

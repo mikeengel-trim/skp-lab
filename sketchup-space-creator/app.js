@@ -13,8 +13,13 @@ const IFC4_SCHEMA_NAME = 'IFC 4';
 const IFC4_SCHEMA_URL = 'https://cdn.habitat.sketchup.com/classifications/schemas/IFC4.skc';
 const IFC_SPACE_TYPE = 'IfcSpace';
 
+// Above this many copies, placeSpaces() confirms before proceeding — cheap
+// insurance against a stray click on the Count stepper flooding the model.
+const LARGE_COUNT_THRESHOLD = 10;
+
 const form = document.getElementById('space-form');
 const nameInput = document.getElementById('name');
+const nameWarning = document.getElementById('name-warning');
 const widthFt = document.getElementById('width-ft');
 const widthIn = document.getElementById('width-in');
 const depthFt = document.getElementById('depth-ft');
@@ -25,6 +30,8 @@ const tagSelect = document.getElementById('tag-select');
 const countValue = document.getElementById('count-value');
 const countDown = document.getElementById('count-down');
 const countUp = document.getElementById('count-up');
+const spacingRow = document.getElementById('spacing-row');
+const spacingInput = document.getElementById('spacing-in');
 const status = document.getElementById('status');
 const placeButton = document.getElementById('place');
 const addTagsByThemeButton = document.getElementById('add-tags-by-theme');
@@ -42,6 +49,10 @@ function report(message, kind) {
 function setCount(next) {
   count = Math.min(50, Math.max(1, next));
   countValue.textContent = String(count);
+  // Spacing only means something once there's more than one copy to space
+  // out — keep it out of the way (and out of updateButtons()'s validity
+  // checks) the rest of the time.
+  spacingRow.hidden = count <= 1;
 }
 
 countDown.addEventListener('click', () => setCount(count - 1));
@@ -63,6 +74,13 @@ function updateButtons() {
 }
 
 form.addEventListener('input', updateButtons);
+
+// Checked on blur rather than on every keystroke: it walks the model's
+// entity tree, which isn't free, and a name being momentarily "in progress"
+// as the user types shouldn't flash a warning.
+nameInput.addEventListener('blur', () => {
+  void checkDuplicateName();
+});
 
 // Refresh right before the user picks a tag, so one added elsewhere while
 // this panel stayed open still shows up without needing to reopen it.
@@ -103,14 +121,14 @@ async function loadTags() {
 // order is what makes facePushPull(floor, height) extrude upward, leaving
 // the base at the origin (z=0) and the top at z=height. The reverse order
 // extrudes downward instead, leaving the top at the origin.
-async function buildSpace(operation, { width, depth, height, name, tagRef }) {
+async function buildSpace(operation, { width, depth, height, name, tagRef, originX = 0, originY = 0 }) {
   const definition = operation.createDefinition(name);
 
   const floor = operation.createFace(definition, [
-    [0, 0, 0],
-    [0, depth, 0],
-    [width, depth, 0],
-    [width, 0, 0],
+    [originX, originY, 0],
+    [originX, originY + depth, 0],
+    [originX + width, originY + depth, 0],
+    [originX + width, originY, 0],
   ]);
 
   operation.facePushPull(floor, height);
@@ -140,15 +158,88 @@ async function ensureIfc4SchemaLoaded(model, operation) {
   }
 }
 
-// Places `count` copies of the same space, all at the origin — this tool has
-// no click-to-place step, so copies stack there for the user to drag apart,
-// the same way a stamped instance would.
+// Places `count` copies of one space, each offset from the last along the
+// width axis by `width + spacing` — spacing of 0 (or count === 1) collapses
+// back to today's single stacked-at-origin behavior.
+async function placeSpacedCopies(operation, { width, depth, height, spacing, count: copyCount, baseName, tagRef, originX = 0, originY = 0 }) {
+  for (let i = 0; i < copyCount; i += 1) {
+    const instanceName = copyCount === 1 ? baseName : `${baseName} ${i + 1}`;
+    await buildSpace(operation, {
+      width,
+      depth,
+      height,
+      name: instanceName,
+      tagRef,
+      originX: originX + i * (width + spacing),
+      originY,
+    });
+  }
+}
+
+// Walks the model's entity tree (recursing into Groups, and into each
+// distinct ComponentDefinition once) collecting every definition name found,
+// so a new space's name can be checked against what's already in the model.
+// Mirrors the tree walk sketchup-component-tag-table uses to enumerate
+// components (model.entities.get() / model.findEntity()), simplified down to
+// just the names this warning needs.
+const MAX_NAME_CHECK_DEPTH = 20;
+
+async function collectDefinitionNames(model) {
+  const names = new Set();
+  const visitedDefinitionIds = new Set();
+
+  async function walk(container, depth) {
+    if (depth > MAX_NAME_CHECK_DEPTH) return;
+    const children = await container.entities.get();
+    for (const child of children) {
+      const typeName = child?.constructor?.name || '';
+      if (typeName === 'Group') {
+        await walk(child, depth + 1);
+      } else if (typeName === 'ComponentInstance') {
+        const definition = await model.findEntity(child.definition);
+        if (definition?.name) names.add(definition.name);
+        if (definition && !visitedDefinitionIds.has(definition.id)) {
+          visitedDefinitionIds.add(definition.id);
+          await walk(definition, depth + 1);
+        }
+      }
+    }
+  }
+
+  await walk(model, 0);
+  return names;
+}
+
+// Non-blocking heads-up, not a validation error: a name matching an existing
+// definition is still perfectly placeable, just easy to do by accident (e.g.
+// re-running this tool with the same Name left over from last time).
+async function checkDuplicateName() {
+  const name = nameInput.value.trim();
+  if (name === '') {
+    nameWarning.hidden = true;
+    return;
+  }
+
+  const model = await SketchUpApi.getActiveModel();
+  const names = await collectDefinitionNames(model);
+  nameWarning.textContent = `A space named "${name}" already exists in this model.`;
+  nameWarning.hidden = !names.has(name);
+}
+
 async function placeSpaces() {
   const name = nameInput.value.trim();
   const width = feetAndInchesToInches(widthFt, widthIn);
   const depth = feetAndInchesToInches(depthFt, depthIn);
   const height = feetAndInchesToInches(heightFt, heightIn);
   const tagName = tagSelect.value;
+  const spacing = count > 1 ? Number(spacingInput.value) || 0 : 0;
+
+  await checkDuplicateName();
+
+  if (count > LARGE_COUNT_THRESHOLD) {
+    const proceed = window.confirm(`Place ${count} copies of "${name}"? That will add ${count} spaces to the model.`);
+    if (!proceed) return false;
+  }
 
   placeButton.disabled = true;
   try {
@@ -163,10 +254,7 @@ async function placeSpaces() {
         tagRef = tagManager.getTagByName(tagName) ?? operation.createTag(tagName);
       }
 
-      for (let i = 0; i < count; i += 1) {
-        const instanceName = count === 1 ? name : `${name} ${i + 1}`;
-        await buildSpace(operation, { width, depth, height, name: instanceName, tagRef });
-      }
+      await placeSpacedCopies(operation, { width, depth, height, spacing, count, baseName: name, tagRef });
     }, 'Create space');
 
     report(`Placed ${count} ${count === 1 ? 'copy' : 'copies'} of "${name}".`, 'ok');

@@ -20,6 +20,7 @@
     <section>
       <label class="field-label" for="name">Name</label>
       <input id="name" type="text" placeholder="e.g. Living Room" autocomplete="off">
+      <p class="hint warning" id="name-warning" hidden></p>
     </section>
 
     <section>
@@ -68,6 +69,14 @@
         <span id="count-value">1</span>
         <button type="button" id="count-up" aria-label="Increase count">+</button>
       </div>
+    </section>
+
+    <section id="spacing-row" hidden>
+      <label class="field-label" for="spacing-in">Spacing</label>
+      <div class="feet-inches">
+        <input id="spacing-in" type="number" value="12" min="0" step="1"><span class="unit">in</span>
+      </div>
+      <p class="hint">Gap between each placed copy</p>
     </section>
 
     <section>

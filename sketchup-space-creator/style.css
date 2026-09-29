@@ -111,6 +111,10 @@ select {
   color: #888;
 }
 
+.hint.warning {
+  color: #b06000;
+}
+
 .count-row {
   display: flex;
   align-items: center;
