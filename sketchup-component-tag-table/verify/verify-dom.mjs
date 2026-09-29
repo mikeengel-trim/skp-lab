@@ -41,6 +41,7 @@ const assertions = [
   ['empty-state starts hidden', document.getElementById('empty-state').hasAttribute('hidden'), true],
   ['add-column-select exists with placeholder option', document.getElementById('add-column-select').options.length >= 1, true],
   ['group-by-definition-toggle exists and starts unchecked in static markup', document.getElementById('group-by-definition-toggle').checked, false],
+  ['group-by-field-select exists (populated at runtime, starts empty in static markup)', document.getElementById('group-by-field-select').options.length, 0],
 ];
 for (const [name, actual, expected] of assertions) {
   if (actual === expected) pass++;
@@ -50,7 +51,7 @@ for (const [name, actual, expected] of assertions) {
 // Structural strings renderColumnsBar/renderFilters/renderTable rely on
 // (class names/dataset keys used for dynamically-built rows) — a typo here
 // wouldn't show up any other way in a harness that can't execute the script.
-const structuralStrings = ['chip-remove', 'filter-row', 'mixed-cell', 'untagged-row', 'count-cell'];
+const structuralStrings = ['chip-remove', 'filter-row', 'mixed-cell', 'blank-row', 'count-cell'];
 for (const s of structuralStrings) {
   if (appJs.includes(s) || html.includes(s)) pass++;
   else { fail++; console.error(`FAIL expected string not found in app.js/index.html: ${s}`); }
@@ -93,10 +94,10 @@ else { fail++; console.error('FAIL expected liveModelHandle to be stopped via .s
 // app.js's model walk dispatches on `child?.constructor?.name`, matching
 // the real JSA SDK's class name.
 class ComponentInstance {
-  constructor({ id, tagId = null }) {
+  constructor({ id, tagId = null, materialId = null }) {
     this.id = id;
     this.tagId = tagId;
-    this.materialId = null;
+    this.materialId = materialId;
     this.name = null;
     this.guid = id;
     this.description = null;
@@ -105,15 +106,19 @@ class ComponentInstance {
   }
 }
 
-const doorA = new ComponentInstance({ id: 'door-a', tagId: 1 });
-const doorB = new ComponentInstance({ id: 'door-b', tagId: 1 });
-const windowA = new ComponentInstance({ id: 'window-a', tagId: 2 });
+// materialId 1 -> Oak on both doors, 2 -> Glass on the window, so grouping
+// by Material (US-210/US-211) has a real non-trivial bucket to check.
+const doorA = new ComponentInstance({ id: 'door-a', tagId: 1, materialId: 1 });
+const doorB = new ComponentInstance({ id: 'door-b', tagId: 1, materialId: 1 });
+const windowA = new ComponentInstance({ id: 'window-a', tagId: 2, materialId: 2 });
+
+const materialsById = new Map([[1, { name: 'Oak' }], [2, { name: 'Glass' }]]);
 
 const selectionCalls = [];
 let mockModel;
 mockModel = {
   getTagManager: async () => ({ tags: [{ id: 1, name: 'Doors' }, { id: 2, name: 'Windows' }] }),
-  getMaterials: async () => ({ findMaterialById: () => null }),
+  getMaterials: async () => ({ findMaterialById: (id) => materialsById.get(id) ?? null }),
   findEntity: async () => null,
   refresh: async () => mockModel,
   entities: { get: async () => [doorA, doorB, windowA] },
@@ -177,6 +182,59 @@ try {
     fail += 3;
     console.error('FAIL expected rendered "Doors" and "Windows" rows with class .component-row, found none');
   }
+
+  // ─── Generic grouping execution tests (US-210/US-211) ───────────────────
+  const doc = execDom.window.document;
+
+  // Tag is a normal column choice now — not excluded from the column picker.
+  const addColumnSelect = doc.getElementById('add-column-select');
+  const hasTagOption = [...addColumnSelect.querySelectorAll('option')].some((o) => o.value === 'tag');
+  if (hasTagOption) pass++;
+  else { fail++; console.error('FAIL expected "tag" to be a selectable column option (US-210 removes its column-picker exclusion)'); }
+
+  // The table header's first column and the footer's group-count text
+  // follow the group-by field's label — initially "Tag" (the default).
+  const firstHeaderCell = () => doc.querySelector('#component-table-head th');
+  if (firstHeaderCell()?.textContent === 'Tag') pass++;
+  else { fail++; console.error(`FAIL expected the first header cell to read "Tag" initially, got "${firstHeaderCell()?.textContent}"`); }
+
+  // Switching the group-by field to Material re-groups the table and
+  // relabels the header/footer accordingly — nothing here is Tag-specific
+  // anymore.
+  const groupByFieldSelect = doc.getElementById('group-by-field-select');
+  groupByFieldSelect.value = 'material';
+  groupByFieldSelect.dispatchEvent(new execDom.window.Event('change', { bubbles: true }));
+
+  if (firstHeaderCell()?.textContent === 'Material') pass++;
+  else { fail++; console.error(`FAIL expected the first header cell to read "Material" after switching group-by, got "${firstHeaderCell()?.textContent}"`); }
+
+  const materialRows = [...doc.querySelectorAll('#component-table-body tr.component-row')];
+  const oakRow = materialRows.find((r) => r.firstChild.textContent === 'Oak');
+  const glassRow = materialRows.find((r) => r.firstChild.textContent === 'Glass');
+  if (oakRow && glassRow) pass++;
+  else { fail++; console.error('FAIL expected "Oak" and "Glass" rows after grouping by Material', materialRows.map((r) => r.firstChild.textContent)); }
+
+  const footerText = doc.getElementById('footer-summary').textContent;
+  if (footerText.includes('Material group')) pass++;
+  else { fail++; console.error(`FAIL expected footer summary to name "Material group(s)", got "${footerText}"`); }
+
+  // Clicking the Oak row still selects both doors, proving grouping and
+  // row-to-model selection (US-204) compose correctly for a non-Tag field.
+  selectionCalls.length = 0;
+  oakRow.dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+  const oakCall = selectionCalls[selectionCalls.length - 1];
+  if (oakCall && oakCall.mode === 'set' && oakCall.entities.length === 2 &&
+      oakCall.entities.includes(doorA) && oakCall.entities.includes(doorB)) {
+    pass++;
+  } else {
+    fail++;
+    console.error('FAIL clicking the "Oak" row (grouped by Material) did not select both doors', oakCall);
+  }
+
+  // Restore Tag grouping so this stays a faithful "default session" for any
+  // future assertions appended after this block.
+  groupByFieldSelect.value = 'tag';
+  groupByFieldSelect.dispatchEvent(new execDom.window.Event('change', { bubbles: true }));
 } catch (e) {
   fail += 3;
   console.error('FAIL click-to-select execution test threw', e);

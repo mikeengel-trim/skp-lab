@@ -18,11 +18,15 @@ model's content.
 
 ## What it does
 
-- Walks the model and counts every `ComponentInstance`, grouped by tag —
-  Tag is the current grouping key, but it's just one column among the same
-  set of attributes columns and filters can use; components with no tag land
-  in a synthetic **Untagged** group, so tagging gaps surface on their own
-  (user story 4).
+- Walks the model and counts every `ComponentInstance`, **grouped by
+  whatever field you pick** via a "Group by" control (US-210/US-211) —
+  built-in or Advanced Attribute, defaulting to Tag for continuity with v1,
+  but no field is structurally special anymore: Tag is just another
+  selectable/filterable/groupable field like Material or a custom
+  attribute. A component whose group-by field is missing/blank lands in a
+  fallback bucket — worded **Untagged** specifically when grouping by Tag
+  (unchanged from v1, so tagging gaps still surface on their own — user
+  story 4), or a generic **(blank)** for every other field.
 - **Columns are user-chosen** from whatever attributes actually exist in the
   model — six built-ins (Tag, Name, Definition Name, Material, GUID,
   Description) plus every Advanced Attribute dictionary/key pair discovered
@@ -63,19 +67,23 @@ model's content.
   in the viewport does. A tag-group summary row selects every component
   instance in that group; clicking a `Mixed (N)` cell to expand/collapse it
   no longer also re-triggers row selection.
-- **Optional second grouping level: Tag → Definition Name** (US-203). A
-  "Tag → Definition Name" checkbox in a Grouping toolbar switches each tag
-  group into one row per Definition Name found within it, with per-column
-  aggregation computed at that sub-group level instead of the whole tag
-  group. Off by default (v1's original "Tag only" behavior, and the shape
-  every existing single-level caller still gets when the option is
-  omitted). The synthetic **Untagged** tag group breaks down by Definition
-  Name the same as any real tag; a component missing its own Definition
-  Name falls into its own `(No Definition Name)` fallback bucket (distinct
-  from Untagged, since it's a different field), sorted last within its tag
-  group the same way Untagged sorts last overall. The chosen mode persists
-  across sessions the same way columns do (`localStorage`, this browser
-  profile).
+- **Optional second grouping level: `<group field>` → Definition Name**
+  (US-203, generalized in US-211). A "`<field>` → Definition Name" checkbox
+  in the Grouping toolbar switches each top-level group into one row per
+  Definition Name found within it, with per-column aggregation computed at
+  that sub-group level instead of the whole group. Its label names whichever
+  field is currently the primary group-by choice, but the second level
+  itself always stays Definition Name — see the "Grouping: relationship to
+  the two-level toggle" decision below for why. Off by default (v1's
+  original "Tag only" behavior, and the shape every existing single-level
+  caller still gets when the option is omitted). A group's blank/fallback
+  bucket breaks down by Definition Name the same as any real value; a
+  component missing its own Definition Name falls into its own
+  `(No Definition Name)` fallback bucket (distinct from the primary field's
+  own blank bucket, since it's a different field), sorted last within its
+  group the same way the primary blank bucket sorts last overall. Both the
+  group-by field and this toggle's state persist across sessions the same
+  way columns do (`localStorage`, this browser profile).
 
 ## PRD decisions made for v1
 
@@ -84,13 +92,15 @@ resolved for this build:
 
 | Question | Decision | Why |
 |---|---|---|
-| Grouping depth (tag only vs. tag → definition) | **Tag only by default, with an opt-in "Tag → Definition Name" toggle (US-203)** | Originally deferred as "a later addition if needed" — that addition landed as an explicit user toggle rather than a default-on behavior change, so every existing saved column/filter setup keeps rendering exactly as before unless the user turns it on. |
+| Grouping depth (tag only vs. tag → definition) | **Tag only by default, with an opt-in second-level toggle (US-203)** | Originally deferred as "a later addition if needed" — that addition landed as an explicit user toggle rather than a default-on behavior change, so every existing saved column/filter setup keeps rendering exactly as before unless the user turns it on. |
 | Live update vs. manual refresh | **Live**, with manual Refresh as fallback | Matches Instance Color Rules' proven pattern; a "live inventory" that goes stale the moment you keep modeling defeats the PRD's own framing. |
-| Filter combination logic | **OR within one field, AND across fields** | Satisfies both "filter by one or more tags" (story 10) and "combine tag and attribute filters" (story 13) without a separate AND/OR toggle UI — see the filter section above. |
-| Row-to-model selection (story 25) | **Out of scope for v1, shipped in US-204** | Selecting entities is a `Selection` API call (`model.updateSelection`), not an `operation.*`/`op.*` mutation, so it was addable later without breaking the "no model mutation" guarantee the PRD's "read-only in v1" scope decision was actually protecting. |
 | Filter combination logic | **OR within one field, AND across fields** (positive filters); **negated filters (US-202) AND together, and AND against any positive filter on the same field** | Satisfies both "filter by one or more tags" (story 10) and "combine tag and attribute filters" (story 13) without a separate AND/OR toggle UI, while keeping a negated filter from being neutralized by OR-ing with a positive one on the same field — see the filter section above. |
 | Negated filter vs. missing value (US-202) | **Does not equal / Does not contain both match a `null`/`undefined` field value** | A component missing the field entirely trivially doesn't equal/contain the filter text; excluding it (as every positive match type does) would silently hide the "no value at all" case a user asking for "does not equal" expects to see. |
-| Row-to-model selection (story 25) | **Out of scope for v1** | User decision, consistent with the PRD's own "Out of Scope" section (read-only view in v1). |
+| Row-to-model selection (story 25) | **Out of scope for v1, shipped in US-204** | Selecting entities is a `Selection` API call (`model.updateSelection`), not an `operation.*`/`op.*` mutation, so it was addable later without breaking the "no model mutation" guarantee the PRD's "read-only in v1" scope decision was actually protecting. |
+| Grouping field (not in the original PRD, added in US-210/US-211) | **Any field is a valid group-by choice, not just Tag** — a "Group by" picker replaces the old fixed Tag-only structure, defaulting to Tag for continuity | The PRD assumed Tag was the table's structural spine; generalizing "Component Count by Tag" into "Component Table" (US-201) wasn't structurally true while grouping stayed hardwired to Tag. See the two Open Design Questions resolved below. |
+| Grouping: multi-value/highly-variable field values (US-211 open question) | **Bucket by exact string value** — identical to how Tag grouping already worked, just generalized | Consistent with how this extension already buckets Tag and Definition Name; a different scheme (e.g. tokenizing free text) would be a bigger, separate feature. |
+| Grouping: numeric fields (US-211 open question) | **Allowed, bucketed by exact value** — not disallowed in the UI | Numeric fields are more naturally *summed* as a column than grouped, but disallowing grouping by them would be an arbitrary restriction the underlying mechanism doesn't need; a user grouping by a mostly-unique numeric field just gets a lot of small buckets, same as grouping by GUID would. |
+| Grouping: relationship to the two-level "→ Definition Name" toggle (US-211 open question) | **The second level stays fixed to Definition Name**, layered on top of whichever field is chosen as the primary group-by | US-211's own notes considered making the second level generic too ("any field → any field"), but that's a materially bigger feature (a second field picker, its own blank-bucket/sort rules, etc.) than "generalize the *first* level" — kept as a possible future story rather than scope-creeping this one. |
 | Nested components (open question 3) | **Counted individually**, not rolled into their parent, keyed by each component's own tag | A nested sub-component can carry a different tag than its parent assembly; collapsing that away would hide exactly the kind of tagging inconsistency this tool exists to surface. |
 | Hidden components/tags (open question 4) | **Counted** — visibility is not read at all | This is an inventory/QA tool; a component that's merely hidden in the current view is still part of the model's contents. |
 | Column persistence scope (story 24) | **Per browser profile** (`localStorage`), not per model or per scene | Matches every other extension in this repo's own persistence choice (Instance Color Rules' rules, this extension's own filters). Does not sync across devices/sessions. |
@@ -108,8 +118,8 @@ sketchup-component-table/
 ├── app.js              # model walk (JSA calls) + DOM wiring; imports logic.js
 ├── icon.svg             # extension + command icon
 └── verify/               # pure-logic + DOM sanity tests
-    ├── verify.mjs         # imports logic.js directly, 34 assertions
-    ├── verify-dom.mjs      # loads the real index.html/app.js into jsdom, 43 assertions
+    ├── verify.mjs         # imports logic.js directly, 47 assertions
+    ├── verify-dom.mjs      # loads the real index.html/app.js into jsdom, 54 assertions
     └── package.json
 ```
 
@@ -143,15 +153,18 @@ npm install
 npm test
 ```
 
-`verify.mjs` (34 assertions) covers field id encode/decode, attribute
+`verify.mjs` (47 assertions) covers field id encode/decode, attribute
 flattening/merging, filter matching (all four match types, non-string value
-coercion), the OR-within-field/AND-across-field filter combination, tag
-grouping (Untagged sentinel, sort order), row-to-model selection's
+coercion), the OR-within-field/AND-across-field filter combination, generic
+field grouping (`groupComponentsByField` — the Tag-preserving `Untagged`
+bucket, a non-Tag built-in field, an Advanced Attribute field, the generic
+`(blank)` bucket, and the `→ Definition Name` second level composing with
+any of those — US-210/US-211), row-to-model selection's
 `getSelectionEntities` helper (US-204), numeric-value/numeric-field
 detection, and column aggregation (empty/sum/single/list/mixed, including the
 `Mixed (N)` threshold and its expand-on-demand formatting).
 
-`verify-dom.mjs` (43 assertions) loads the real shipped `index.html` into
+`verify-dom.mjs` (54 assertions) loads the real shipped `index.html` into
 jsdom and confirms every element id `app.js` looks up actually exists in the
 markup, starting UI state (banners hidden, Refresh disabled, empty
 containers), plus regression guards: this extension makes no model-mutating
@@ -162,19 +175,22 @@ ObserverHandle method-name mistake `sketchup-tag-color-viewer`'s own history
 already caught once (its `JSA_API_COMPLETE.md` reference claims `.end()`;
 the real object exposes `.stop()`/`.endStream()`).
 
-Unlike every other check in this file, the click-to-select test (US-204)
-actually **executes** the real shipped `app.js` inside jsdom rather than
-only regex-checking its source: it sets the handful of bare globals `app.js`
-touches (`document`/`window`/`localStorage`/`SketchUpApi`/`Option`) to a
-mocked model (3 mock `ComponentInstance`s across two tags, `getTagManager`/
-`getMaterials`/`entities.get`/`updateSelection` all stubbed), waits for the
-app's own `init()` to finish its walk and initial render, then dispatches a
-real `click` event on a rendered row and asserts `model.updateSelection` was
-called with exactly that row's entities and `mode: 'set'` — and that
-clicking a different row replaces the selection rather than adding to it.
-This is possible here specifically because the Selection API is trivially
-mockable, unlike the WebGL/Three.js dependency that keeps every *other*
-extension's own `verify-dom.mjs` from executing its script at all.
+Unlike every other check in this file, the click-to-select test (US-204,
+extended in US-210/US-211) actually **executes** the real shipped `app.js`
+inside jsdom rather than only regex-checking its source: it sets the handful
+of bare globals `app.js` touches (`document`/`window`/`localStorage`/
+`SketchUpApi`/`Option`) to a mocked model (3 mock `ComponentInstance`s across
+two tags and two materials, `getTagManager`/`getMaterials`/`entities.get`/
+`updateSelection` all stubbed), waits for the app's own `init()` to finish
+its walk and initial render, then dispatches real `click`/`change` events —
+asserting `model.updateSelection` was called with exactly a clicked row's
+entities and `mode: 'set'` (and that clicking a different row replaces
+rather than adds to the selection), that Tag is a selectable column option,
+and that switching the "Group by" picker to Material re-groups the table,
+relabels the header/footer, and still selects the right components on a row
+click. This is possible here specifically because the Selection API is
+trivially mockable, unlike the WebGL/Three.js dependency that keeps every
+*other* extension's own `verify-dom.mjs` from executing its script at all.
 
 **Not covered, and why:** the live `SketchUpApi.connect()` handshake and
 `observeActiveModel` push notifications against a real model — this needs a

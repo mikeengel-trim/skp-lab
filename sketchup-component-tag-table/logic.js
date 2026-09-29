@@ -14,8 +14,9 @@
 // Same shape as Instance Color Rules' field picker (sketchup-tag-color-
 // viewer): a handful of always-available built-ins, plus every distinct
 // Advanced Attribute dictionary/key pair discovered while walking the
-// model. `tag` doubles as the fixed group-by key (every row is a tag
-// group) AND an ordinary filterable/columnable field like any other.
+// model. As of US-210, `tag` is an ordinary filterable/columnable/
+// groupable field like any other — no field is privileged as a fixed
+// group-by key; `app.js`'s group-by picker just defaults to it.
 
 export const BUILTIN_FIELDS = [
   { id: 'tag', label: 'Tag' },
@@ -194,41 +195,58 @@ export function filterComponents(components, filters) {
   return components.filter((c) => componentMatchesFilters(c, filtersByField));
 }
 
-// ─── Grouping by tag ────────────────────────────────────────────────────
-
-// A component with no tag (tag is null/empty) groups under the synthetic
-// "Untagged" bucket — same collision-handling as Space Creator's tag
-// dropdown: SketchUp's own built-in default tag is also literally named
-// "Untagged", so a component tagged with that real tag lands in the same
-// bucket as one with no tag at all, which is the behavior a user looking
-// for tagging gaps actually wants (user story 4).
+// ─── Grouping by field ──────────────────────────────────────────────────
 //
-// `byDefinition` (US-203) adds an optional second grouping level: each tag
-// entry also gets a `subgroups` array breaking its components down further
-// by Definition Name, using the same empty-value/sort rules as the tag
-// level but keyed on `definitionName` instead. Off by default so the
-// existing single-level entry shape (`{ tagLabel, components }`, no
-// `subgroups` key) is unchanged for every caller that doesn't ask for it.
-export function groupComponentsByTag(components, { byDefinition = false } = {}) {
-  const groups = new Map(); // tagLabel -> component[]
+// US-210/US-211: grouping is no longer fixed to Tag — the caller picks
+// which field to group by, the same way filters already pick a field via
+// `getFieldValue`. A component whose group-by field is missing/blank
+// groups under a synthetic fallback bucket — same collision-handling as
+// Space Creator's tag dropdown originally established for Tag specifically
+// (SketchUp's own built-in default tag is literally named "Untagged", so a
+// component tagged with that real tag lands in the same bucket as one with
+// no tag at all — user story 4). `blankBucketLabel` preserves that exact
+// "Untagged" wording when the group-by field IS Tag (no behavior change for
+// existing Tag-grouped tables), and falls back to a generic `BLANK_LABEL`
+// for every other field, so the same fallback-bucket behavior works no
+// matter what's being grouped on.
+
+export const BLANK_LABEL = '(blank)';
+
+export function blankBucketLabel(fieldId) {
+  return fieldId === 'tag' ? UNTAGGED_LABEL : BLANK_LABEL;
+}
+
+// `byDefinition` (US-203) adds an optional second grouping level: each
+// top-level entry also gets a `subgroups` array breaking its components
+// down further by Definition Name, using the same empty-value/sort rules as
+// the top level but keyed on `definitionName` instead. This second level
+// stays fixed to Definition Name regardless of `fieldId` — US-211's own
+// notes flag "any field -> any field" two-level grouping as a considered
+// alternative, but that's a bigger, separate generalization; keeping the
+// second level fixed here means US-203's toggle keeps working unchanged on
+// top of whatever field the user now picks as the primary one.
+export function groupComponentsByField(components, fieldId, { byDefinition = false } = {}) {
+  const blankLabel = blankBucketLabel(fieldId);
+  const groups = new Map(); // groupLabel -> component[]
   for (const component of components) {
-    const label = component.tag && component.tag.trim() !== '' ? component.tag : UNTAGGED_LABEL;
+    const raw = getFieldValue(component, fieldId);
+    const label = raw !== null && raw !== undefined && String(raw).trim() !== '' ? String(raw) : blankLabel;
     if (!groups.has(label)) groups.set(label, []);
     groups.get(label).push(component);
   }
 
-  const entries = [...groups.entries()].map(([tagLabel, comps]) => ({
-    tagLabel,
+  const entries = [...groups.entries()].map(([groupLabel, comps]) => ({
+    groupLabel,
     components: comps,
     ...(byDefinition ? { subgroups: groupComponentsByDefinitionName(comps) } : {}),
   }));
-  // Alphabetical, but Untagged always sorts last regardless of where it'd
-  // otherwise land — it's a fallback bucket, not a real tag, and reads
-  // better parked at the bottom of a reviewer's QA pass.
+  // Alphabetical, but the blank bucket always sorts last regardless of
+  // where it'd otherwise land — it's a fallback bucket, not a real value,
+  // and reads better parked at the bottom of a reviewer's QA pass.
   entries.sort((a, b) => {
-    if (a.tagLabel === UNTAGGED_LABEL) return 1;
-    if (b.tagLabel === UNTAGGED_LABEL) return -1;
-    return a.tagLabel.localeCompare(b.tagLabel, undefined, { sensitivity: 'base' });
+    if (a.groupLabel === blankLabel) return 1;
+    if (b.groupLabel === blankLabel) return -1;
+    return a.groupLabel.localeCompare(b.groupLabel, undefined, { sensitivity: 'base' });
   });
   return entries;
 }
@@ -237,7 +255,7 @@ export const MISSING_DEFINITION_LABEL = '(No Definition Name)';
 
 // The second grouping level for US-203: buckets one tag group's components
 // by Definition Name. Not exported on its own — always reached through
-// groupComponentsByTag's `byDefinition` option, so the two levels can't
+// groupComponentsByField's `byDefinition` option, so the two levels can't
 // drift apart (e.g. a duplicated empty-value bucket with a different
 // fallback label). A missing/blank definition name gets its own fallback
 // bucket, distinct from UNTAGGED_LABEL since it's a different field —
