@@ -102,7 +102,7 @@ else { fail++; console.error('FAIL expected liveModelHandle to be stopped via .s
 // app.js's model walk dispatches on `child?.constructor?.name`, matching
 // the real JSA SDK's class name.
 class ComponentInstance {
-  constructor({ id, tagId = null, materialId = null }) {
+  constructor({ id, tagId = null, materialId = null, transform = null, bounds = null }) {
     this.id = id;
     this.tagId = tagId;
     this.materialId = materialId;
@@ -111,13 +111,25 @@ class ComponentInstance {
     this.description = null;
     this.definition = null;
     this.attributes = { allDictionaries: [] };
+    // .transform (US-206), not .transformation — see app.js's own comment
+    // on why that distinction matters. A flat 16-number row-major matrix,
+    // translation at indices 12-14, matching the real SDK's confirmed shape.
+    this.transform = transform;
+    this.bounds = bounds;
   }
+}
+
+function flatMatrix(x, y, z) {
+  return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1];
 }
 
 // materialId 1 -> Oak on both doors, 2 -> Glass on the window, so grouping
 // by Material (US-210/US-211) has a real non-trivial bucket to check.
-const doorA = new ComponentInstance({ id: 'door-a', tagId: 1, materialId: 1 });
-const doorB = new ComponentInstance({ id: 'door-b', tagId: 1, materialId: 1 });
+// transform/bounds give doorA/doorB a real Transform X / Size Width to sum
+// (US-206); windowA and the fixtures deliberately have none, to also cover
+// getFieldValue returning null when a component lacks this geometry data.
+const doorA = new ComponentInstance({ id: 'door-a', tagId: 1, materialId: 1, transform: flatMatrix(10, 0, 0), bounds: { width: 36, height: 80, depth: 1.75 } });
+const doorB = new ComponentInstance({ id: 'door-b', tagId: 1, materialId: 1, transform: flatMatrix(20, 0, 0), bounds: { width: 36, height: 80, depth: 1.75 } });
 const windowA = new ComponentInstance({ id: 'window-a', tagId: 2, materialId: 2 });
 // 4 distinct guids in one tag group so a `guid` column lands in aggregateColumn's
 // 'mixed' bucket (MIXED_VALUE_THRESHOLD = 3) — used by the Mixed (N)
@@ -386,6 +398,40 @@ try {
   // future assertions appended after this block.
   groupByFieldSelect.value = 'tag';
   groupByFieldSelect.dispatchEvent(new execDom.window.Event('change', { bubbles: true }));
+
+  // ─── Transform/Size fields execution test (US-206) ───────────────────────
+  try {
+    const addColumnSelect = doc.getElementById('add-column-select');
+    addColumnSelect.value = 'transformX';
+    addColumnSelect.dispatchEvent(new execDom.window.Event('change', { bubbles: true }));
+    addColumnSelect.value = 'sizeWidth';
+    addColumnSelect.dispatchEvent(new execDom.window.Event('change', { bubbles: true }));
+
+    const doorsRowNow = [...doc.querySelectorAll('#component-table-body tr.component-row')].find((r) => r.firstChild.textContent === 'Doors');
+    const cells = [...doorsRowNow.querySelectorAll('td')].map((td) => td.textContent);
+    // doorA (transformX 10, sizeWidth 36) + doorB (transformX 20, sizeWidth 36)
+    if (cells.includes('30')) pass++;
+    else { fail++; console.error(`FAIL expected the Doors row's Transform X column to sum to 30, got cells: ${JSON.stringify(cells)}`); }
+    if (cells.includes('72')) pass++;
+    else { fail++; console.error(`FAIL expected the Doors row's Size Width column to sum to 72, got cells: ${JSON.stringify(cells)}`); }
+
+    // windowA has no transform/bounds at all — its own row's Transform X
+    // cell should render the "no value" empty dash, not a stray 0.
+    const windowRowNow = [...doc.querySelectorAll('#component-table-body tr.component-row')].find((r) => r.firstChild.textContent === 'Windows');
+    const windowCells = [...windowRowNow.querySelectorAll('td')].map((td) => td.textContent);
+    if (windowCells.includes('—')) pass++;
+    else { fail++; console.error(`FAIL expected the Windows row (no transform/bounds data) to show an empty "—" cell, got: ${JSON.stringify(windowCells)}`); }
+
+    // Clean up so later assertions (e.g. Ghost Field View's column check)
+    // aren't looking at a table with extra columns they don't expect.
+    for (const label of ['Transform → X (in)', 'Size → Width (in)']) {
+      const chip = [...doc.querySelectorAll('#columns-list .chip')].find((c) => c.querySelector('.chip-label').textContent === label);
+      chip?.querySelector('.chip-remove').dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+    }
+  } catch (e) {
+    fail += 3;
+    console.error('FAIL Transform/Size execution test threw', e);
+  }
 
   // ─── Saved table configurations execution tests (US-207/US-208) ─────────
 

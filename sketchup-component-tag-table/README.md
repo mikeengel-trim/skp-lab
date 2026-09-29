@@ -28,11 +28,24 @@ model's content.
   (unchanged from v1, so tagging gaps still surface on their own — user
   story 4), or a generic **(blank)** for every other field.
 - **Columns are user-chosen** from whatever attributes actually exist in the
-  model — six built-ins (Tag, Name, Definition Name, Material, GUID,
-  Description) plus every Advanced Attribute dictionary/key pair discovered
-  while walking the tree, added live as new ones turn up. Add, remove and
-  reorder columns; the choice persists across sessions (`localStorage`, this
-  browser profile).
+  model — twelve built-ins (Tag, Name, Definition Name, Material, GUID,
+  Description, plus Transform → X/Y/Z and Size → Width/Height/Depth — see
+  below) plus every Advanced Attribute dictionary/key pair discovered while
+  walking the tree, added live as new ones turn up. Add, remove and reorder
+  columns; the choice persists across sessions (`localStorage`, this browser
+  profile).
+- **Transform and Size fields** (US-206) expose each component's placement
+  and bounding-box dimensions as six scalar built-ins — `Transform → X/Y/Z`
+  (the instance's translation) and `Size → Width/Height/Depth` (its
+  `BoundingBox`) — decomposed the same way every other field here is a
+  single value, rather than one opaque "transform" column. Both read
+  directly off already-present `ComponentInstance` properties (`.transform`,
+  `.bounds`), so there's no extra computation or live-update cost beyond
+  what this walk already does per instance. Values are SketchUp's raw
+  internal inches (no unit conversion), and summed values are rounded to 4
+  decimal places for display so real geometry doesn't show up as
+  floating-point noise (e.g. `47.999999999997` displays as `48`). **Area is
+  deliberately not included** — see the PRD decisions table below for why.
 - **Numeric columns sum** per tag group; **text columns list unique values**,
   collapsing to `Mixed (N)` past 3 distinct values, click to expand the full
   list (user stories 21–23). A column counts as numeric only if every value
@@ -128,6 +141,8 @@ resolved for this build:
 | Column persistence scope (story 24) | **Per browser profile** (`localStorage`), not per model or per scene | Matches every other extension in this repo's own persistence choice (Instance Color Rules' rules, this extension's own filters). Does not sync across devices/sessions. |
 | Numeric vs. text detection (open question 6) | **Inferred from values**: numeric only if every present value, across the filtered set, parses as a number | Advanced Attributes carry no reliable declared type to read instead. |
 | Client target | Runs anywhere JSA runs (Web, Desktop, iPad) — same as every other extension in this repo | No client-specific code; nothing in this build depends on a platform capability. |
+| Built-in field audit (US-206) | **Transform (X/Y/Z translation) and Size (Width/Height/Depth) are real, already-computed properties** (`ComponentInstance.transform`/`.bounds`) — added as six scalar built-ins. **`locked`/`hidden` are also real** built-in booleans this audit found but did not add: a boolean field doesn't fit this extension's numeric-sum/text-list column model without its own design question this story didn't ask to resolve. | Confirmed against the live JSA API reference plus `sketchup-tag-color-viewer`'s own source-verified corrections to it — that reference doc's prose already claims two properties that don't match the real SDK (`ObserverHandle.end()`, `ComponentInstance.transformation`); both are wrong, the real ones are `.stop()`/`.endStream()` and `.transform`. |
+| Area (US-206) | **Not implemented — deferred.** Area is not a real per-component/per-definition property; only `Face.area` exists. Computing a component's area would mean walking its own faces (excluding nested sub-instances') on every read | This extension has no real SketchUp session available to validate whether that per-instance face-walk introduces visible live-update lag on a large model — exactly the risk this story's own spike asked to resolve before implementing. Shipping Transform/Size (both free reads) now and deferring Area until it can be measured against a real model was the responsible call over guessing. |
 
 ## Layout
 
@@ -140,8 +155,8 @@ sketchup-component-table/
 ├── app.js              # model walk (JSA calls) + DOM wiring; imports logic.js
 ├── icon.svg             # extension + command icon
 └── verify/               # pure-logic + DOM sanity tests
-    ├── verify.mjs         # imports logic.js directly, 52 assertions
-    ├── verify-dom.mjs      # loads the real index.html/app.js into jsdom, 88 assertions
+    ├── verify.mjs         # imports logic.js directly, 55 assertions
+    ├── verify-dom.mjs      # loads the real index.html/app.js into jsdom, 91 assertions
     └── package.json
 ```
 
@@ -164,6 +179,8 @@ repo no longer ships extensions as a drag-and-drop zip (see
 | `model.getMaterials()` → `Materials.findMaterialById(id)` | resolve `materialId` → material name |
 | `model.updateSelection(entities, mode)` | click-to-select (US-204), `mode: 'set'` |
 | `ComponentInstance.name` / `.tagId` / `.materialId` / `.guid` / `.description` / `.definition` | per-component built-in fields |
+| `ComponentInstance.transform` (not `.transformation`) | Transform → X/Y/Z (US-206) |
+| `ComponentInstance.bounds` → `BoundingBox.width`/`.height`/`.depth` | Size → Width/Height/Depth (US-206) |
 | `ComponentDefinition.name` | the Definition Name field |
 | `entity.attributes.allDictionaries` | every Advanced Attribute on an instance or its definition |
 
@@ -175,7 +192,7 @@ npm install
 npm test
 ```
 
-`verify.mjs` (52 assertions) covers field id encode/decode, attribute
+`verify.mjs` (55 assertions) covers field id encode/decode, attribute
 flattening/merging, filter matching (all four match types, non-string value
 coercion), the OR-within-field/AND-across-field filter combination, generic
 field grouping (`groupComponentsByField` — the Tag-preserving `Untagged`
@@ -183,12 +200,14 @@ bucket, a non-Tag built-in field, an Advanced Attribute field, the generic
 `(blank)` bucket, and the `→ Definition Name` second level composing with
 any of those — US-210/US-211), row-to-model selection's
 `getSelectionEntities` helper (US-204), saved-table-configuration helpers
-`sortSavedConfigs`/`pruneMissingFields` (US-207/US-208), numeric-value/
-numeric-field detection, and column aggregation (empty/sum/single/list/
-mixed, including the `Mixed (N)` threshold and its expand-on-demand
-formatting).
+`sortSavedConfigs`/`pruneMissingFields` (US-207/US-208), the Transform/Size
+built-in fields including their `null`-when-absent behavior (US-206),
+numeric-value/numeric-field detection, and column aggregation (empty/sum/
+single/list/mixed, including the `Mixed (N)` threshold, its expand-on-demand
+formatting, and the 4-decimal-place rounding a summed value gets before
+display).
 
-`verify-dom.mjs` (88 assertions) loads the real shipped `index.html` into
+`verify-dom.mjs` (91 assertions) loads the real shipped `index.html` into
 jsdom and confirms every element id `app.js` looks up actually exists in the
 markup, starting UI state (banners hidden, Refresh disabled, empty
 containers), plus regression guards: this extension makes no model-mutating
@@ -229,6 +248,10 @@ scenario below reuses the same loaded instance rather than re-importing):
   column option; switching the "Group by" picker to Material re-groups the
   table, relabels the header/footer away from "Tag", and a row click still
   selects the right components for that non-Tag grouping.
+- **Transform/Size fields (US-206):** adding the `Transform → X` and
+  `Size → Width` columns sums each correctly per tag group from the mocked
+  instances' `.transform`/`.bounds`, and a component with neither (the mock
+  window) renders the empty `—` dash rather than a stray `0`.
 - **Saved table configurations (US-207/US-208):** a config seeded straight
   into the mocked `localStorage` *before* `app.js` is imported (referencing
   an Advanced Attribute field this session never discovers) shows up in the
@@ -265,3 +288,8 @@ Color Rules' own README. **Not yet tested inside a real SketchUp session.**
 - Stops at 200,000 components (`MAX_COMPONENTS`) and says so in the footer
   banner, for the same "don't hang on a pathological model" reason Instance
   Color Rules caps at 1.5M triangles.
+- No Area field (US-206) — not a real per-component property (only
+  `Face.area` exists), and computing it would require an unvalidated
+  per-instance face-walk on every read; deferred until it can be measured
+  against a real model in a real SketchUp session. See the PRD decisions
+  table above.

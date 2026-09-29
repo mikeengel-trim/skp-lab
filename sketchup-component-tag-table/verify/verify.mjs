@@ -91,6 +91,20 @@ test('getFieldValue reads every built-in field', () => {
   assert.equal(getFieldValue(sampleComponent, 'description'), 'Front entry');
 });
 
+test('getFieldValue reads the Transform/Size fields (US-206), and null when absent', () => {
+  const withGeometry = { ...sampleComponent, transformX: 12.5, transformY: -3, transformZ: 0, sizeWidth: 36, sizeHeight: 80, sizeDepth: 1.75 };
+  assert.equal(getFieldValue(withGeometry, 'transformX'), 12.5);
+  assert.equal(getFieldValue(withGeometry, 'transformY'), -3);
+  assert.equal(getFieldValue(withGeometry, 'transformZ'), 0);
+  assert.equal(getFieldValue(withGeometry, 'sizeWidth'), 36);
+  assert.equal(getFieldValue(withGeometry, 'sizeHeight'), 80);
+  assert.equal(getFieldValue(withGeometry, 'sizeDepth'), 1.75);
+
+  // sampleComponent itself carries none of these (built without them)
+  assert.equal(getFieldValue(sampleComponent, 'transformX'), null);
+  assert.equal(getFieldValue(sampleComponent, 'sizeWidth'), null);
+});
+
 test('getFieldValue reads an Advanced Attribute field', () => {
   const id = encodeAttributeFieldId('IFC', 'Status');
   assert.equal(getFieldValue(sampleComponent, id), 'Installed');
@@ -439,6 +453,15 @@ test('aggregateColumn: sum for a numeric column', () => {
   assert.deepEqual(aggregateColumn(components, id, true), { type: 'sum', value: 350.5 });
 });
 
+test('aggregateColumn: sums a Transform/Size field (US-206) across a tag group', () => {
+  const components = [
+    { transformX: 12.5, sizeWidth: 36 },
+    { transformX: 7.5, sizeWidth: 24 },
+  ];
+  assert.deepEqual(aggregateColumn(components, 'transformX', true), { type: 'sum', value: 20 });
+  assert.deepEqual(aggregateColumn(components, 'sizeWidth', true), { type: 'sum', value: 60 });
+});
+
 test('aggregateColumn: single value when every component agrees', () => {
   const components = [{ material: 'Oak' }, { material: 'Oak' }];
   assert.deepEqual(aggregateColumn(components, 'material', false), { type: 'single', value: 'Oak' });
@@ -466,6 +489,12 @@ test('formatColumnCell renders each summary type, mixed collapsed vs expanded', 
   assert.equal(formatColumnCell({ type: 'list', values: ['Oak', 'Maple'] }), 'Oak, Maple');
   assert.equal(formatColumnCell({ type: 'mixed', values: ['A', 'B', 'C', 'D'], count: 4 }, false), 'Mixed (4)');
   assert.equal(formatColumnCell({ type: 'mixed', values: ['A', 'B', 'C', 'D'], count: 4 }, true), 'A, B, C, D');
+});
+
+test('formatColumnCell rounds a sum to 4 decimal places, collapsing geometry floating-point noise (US-206)', () => {
+  assert.equal(formatColumnCell({ type: 'sum', value: 47.999999999997 }), '48');
+  assert.equal(formatColumnCell({ type: 'sum', value: 3.14159265 }), '3.1416');
+  assert.equal(formatColumnCell({ type: 'sum', value: 3.5 }), '3.5'); // a real decimal is not truncated to an integer
 });
 
 // ─── Saved table configurations (US-207/US-208) ───────────────────────────

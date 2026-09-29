@@ -101,16 +101,28 @@ Sample prompt to kickoff work by claude based on the Todo.md
   - A full audit of what other built-in `ComponentInstance`/`ComponentDefinition` properties JSA exposes that would be reasonable additions here (the story's own ask — "others like this may also exist" — is itself the first acceptance criterion below, not a rhetorical aside).
   Record the answers (and which properties are in/out of scope for this story vs. deferred) before writing code.
 
+**Resolved (see README.md's PRD decisions table for full detail):**
+- `ComponentInstance.transformation` doesn't exist on the real SDK — it's `.transform` (confirmed via `sketchup-tag-color-viewer`'s own source-verified correction to the same reference doc, which also already caught it being wrong about `ObserverHandle.end()`). It's a `Transformation` backed by a flat 16-number row-major matrix; translation is at indices 12–14.
+- Size is real and already computed: `ComponentInstance.bounds` (a `BoundingBox`) exposes `.width`/`.height`/`.depth` directly — no geometry computation needed, no live-update performance concern.
+- Area is **not** a real per-component/per-definition property — only `Face.area` exists. Computing it would require walking each instance's own faces (excluding nested sub-instances) on every read, an unvalidated live-update cost with no real SketchUp session available to measure it against a large model. **Deferred, not implemented in this story.**
+- Other real built-ins found: `locked`, `hidden` (both booleans) — not added here, since a boolean doesn't fit this extension's numeric-sum/text-list column model without its own unresolved design question.
+
 #### Acceptance Criteria
-- [ ] **Field Audit:** Produce and record (in the PR description or a repo doc) the list of additional built-in `ComponentInstance`/`ComponentDefinition` properties JSA actually exposes, beyond the six already in `BUILTIN_FIELDS` — confirming Transform, Size, and Area are real, and noting any others found.
-- [ ] **Composite Fields Decomposed:** Any built-in that is itself a composite value (Transform → X/Y/Z translation at minimum; note whether rotation/scale components should also be exposed, per the audit) is added as separate sub-fields rather than one opaque field — consistent with how columns/filters already operate on single scalar values elsewhere in this extension.
-- [ ] **Field IDs & Labels:** New built-in (including sub-)fields are added to `BUILTIN_FIELDS` (or an equivalent structure if flat `BUILTIN_FIELDS` doesn't cleanly support composites — see audit) with clear labels (e.g. "Transform → X", "Transform → Y", "Transform → Z", "Size", "Area"), following the existing `label` convention.
-- [ ] **`getFieldValue` Support:** `getFieldValue` in `logic.js` returns the correct value for every new field, including `null` for components where the property doesn't apply (matching existing behavior for missing fields).
-- [ ] **Numeric Aggregation:** Confirm the new fields (Transform X/Y/Z, Size, Area are all numeric) are summed correctly per tag group under the existing numeric-column aggregation rule, and format sensibly (units, decimal precision) rather than raw floating-point noise.
-- [ ] **Live Update Performance:** If any new field requires computing a value (not just reading a stored property), verify it doesn't introduce a noticeable lag in the live-update path (`observeActiveModel`) on a reasonably large model; document the finding.
-- [ ] **Filtering:** New fields work with the full existing filter match-type set (Contains/Equals/Starts with/Ends with, plus Does not equal/Does not contain from US-202 if that has landed first).
-- [ ] **Test Coverage:** `verify/verify.mjs` includes assertions for `getFieldValue` on each new field (including the composite sub-fields) and for numeric aggregation of at least one of them.
-- [ ] **Test Pipeline:** `npm test` inside `/verify` passes with 0 failures.
+- [x] **Field Audit:** Produce and record (in the PR description or a repo doc) the list of additional built-in `ComponentInstance`/`ComponentDefinition` properties JSA actually exposes, beyond the six already in `BUILTIN_FIELDS` — confirming Transform, Size, and Area are real, and noting any others found.
+  - Recorded in `README.md`'s PRD decisions table; Area's audit conclusion is that it is *not* a real per-component property (see above) — a valid, honest audit finding, not a gap.
+- [x] **Composite Fields Decomposed:** Any built-in that is itself a composite value (Transform → X/Y/Z translation at minimum; note whether rotation/scale components should also be exposed, per the audit) is added as separate sub-fields rather than one opaque field — consistent with how columns/filters already operate on single scalar values elsewhere in this extension.
+  - Transform → X/Y/Z (translation only — rotation/scale weren't asked for and have no obvious single-scalar representation for a sortable/summable table column, so left out) and Size → Width/Height/Depth, six sub-fields total.
+- [x] **Field IDs & Labels:** New built-in (including sub-)fields are added to `BUILTIN_FIELDS` (or an equivalent structure if flat `BUILTIN_FIELDS` doesn't cleanly support composites — see audit) with clear labels (e.g. "Transform → X", "Transform → Y", "Transform → Z", "Size", "Area"), following the existing `label` convention.
+  - Flat `BUILTIN_FIELDS` worked fine for these scalar sub-fields; labels include "(in)" since these are raw, unconverted internal SketchUp inches.
+- [x] **`getFieldValue` Support:** `getFieldValue` in `logic.js` returns the correct value for every new field, including `null` for components where the property doesn't apply (matching existing behavior for missing fields).
+- [x] **Numeric Aggregation:** Confirm the new fields (Transform X/Y/Z, Size, Area are all numeric) are summed correctly per tag group under the existing numeric-column aggregation rule, and format sensibly (units, decimal precision) rather than raw floating-point noise.
+  - Added 4-decimal-place rounding to `formatColumnCell`'s `sum` case generically (benefits every numeric field, not just these) to collapse geometry-derived floating-point noise without truncating a genuine attribute-provided decimal.
+- [x] **Live Update Performance:** If any new field requires computing a value (not just reading a stored property), verify it doesn't introduce a noticeable lag in the live-update path (`observeActiveModel`) on a reasonably large model; document the finding.
+  - Neither Transform nor Size requires any computation beyond reading two already-present properties per instance — no live-update performance concern, and thus nothing to measure. (Area would have needed this and is exactly why it's deferred instead.)
+- [x] **Filtering:** New fields work with the full existing filter match-type set (Contains/Equals/Starts with/Ends with, plus Does not equal/Does not contain from US-202 if that has landed first).
+  - Works automatically via the existing generic `getFieldValue`/`filterMatches` seam — no field-specific filter code needed.
+- [x] **Test Coverage:** `verify/verify.mjs` includes assertions for `getFieldValue` on each new field (including the composite sub-fields) and for numeric aggregation of at least one of them.
+- [x] **Test Pipeline:** `npm test` inside `/verify` passes with 0 failures.
 
 ### [US-207] Save Named Table Configurations for Future Sessions
 * **As an** Extension User
