@@ -33,13 +33,15 @@ Sample prompt to kickoff work by claude based on the Todo.md
 
 **Open Design Question (resolve before/while implementing, do not silently guess):** Filters on the *same* field currently combine with OR (`groupFiltersByField` in `logic.js`), which is correct for two positive filters (e.g. "Tag equals Doors" OR "Tag equals Windows"). Mixing a positive and a negated match type on the same field under OR produces confusing results (e.g. "Tag equals Doors" OR "Tag does not equal Doors" matches everything). Decide and document: (a) negated filters combine with AND instead of OR when mixed with other filters on the same field, (b) negated filters are restricted to their own field slot / can't be combined with a positive filter on that field in the UI, or (c) some other explicit rule — then add test coverage in `verify/verify.mjs` proving the chosen behavior.
 
+**Resolved: option (a).** Within a field, positive filters still OR together and negated filters now AND together, and the two groups AND against each other (`componentMatchesFilters` in `logic.js`) — see `README.md`'s "PRD decisions made for v1" table and the two `verify/verify.mjs` tests covering negated-vs-negated and negated-vs-positive combination on the same field.
+
 #### Acceptance Criteria
-- [ ] **Match Type Options:** Add `notEquals` and `notContains` to the filter match-type list in `logic.js` (`filterMatches`) and to the corresponding `<select>` options rendered in `app.js`/`index.html`.
-- [ ] **Null/Undefined Handling:** Decide and document how `notEquals`/`notContains` treat a component where the field's value is `null`/`undefined` (i.e., the field doesn't apply/exist on that component) — currently `filterMatches` short-circuits to `false` for any match type when the value is missing, which would silently exclude "does not equal" results a user would expect to see. Update `filterMatches` accordingly.
-- [ ] **Combination Rule Resolved:** Implement and document the same-field combination rule from the Open Design Question above, so mixing positive and negated filters on one field behaves predictably rather than accidentally matching everything or nothing.
-- [ ] **UI:** The filter row's match-type dropdown includes both new options with clear labels ("Does not equal", "Does not contain"), consistent with the existing four options' styling and behavior (including the active-filters summary text shown for filters on fields not currently displayed as columns — see US-201's parent feature notes).
-- [ ] **Test Coverage:** `verify/verify.mjs` includes assertions for `notEquals` and `notContains`, covering: a matching case, a non-matching case, and the chosen null/undefined behavior.
-- [ ] **Test Pipeline:** `npm test` inside `/verify` passes with 0 failures.
+- [x] **Match Type Options:** Add `notEquals` and `notContains` to the filter match-type list in `logic.js` (`filterMatches`) and to the corresponding `<select>` options rendered in `app.js`/`index.html`.
+- [x] **Null/Undefined Handling:** Decide and document how `notEquals`/`notContains` treat a component where the field's value is `null`/`undefined` (i.e., the field doesn't apply/exist on that component) — currently `filterMatches` short-circuits to `false` for any match type when the value is missing, which would silently exclude "does not equal" results a user would expect to see. Update `filterMatches` accordingly.
+- [x] **Combination Rule Resolved:** Implement and document the same-field combination rule from the Open Design Question above, so mixing positive and negated filters on one field behaves predictably rather than accidentally matching everything or nothing.
+- [x] **UI:** The filter row's match-type dropdown includes both new options with clear labels ("Does not equal", "Does not contain"), consistent with the existing four options' styling and behavior (including the active-filters summary text shown for filters on fields not currently displayed as columns — see US-201's parent feature notes).
+- [x] **Test Coverage:** `verify/verify.mjs` includes assertions for `notEquals` and `notContains`, covering: a matching case, a non-matching case, and the chosen null/undefined behavior.
+- [x] **Test Pipeline:** `npm test` inside `/verify` passes with 0 failures.
 
 ### [US-203] Optional Definition-Level Grouping (Tag → Definition Name)
 * **As a** Developer and Extension User
@@ -47,12 +49,12 @@ Sample prompt to kickoff work by claude based on the Todo.md
 * **So that** I can see not just how many components are on a tag, but which component definitions make up that count — something the v1 PRD explicitly deferred ("Grouping depth... Tag only... definition-level breakdown can be a later addition if needed", per `README.md`).
 
 #### Acceptance Criteria
-- [ ] **Toggle:** Add a UI control (e.g. a checkbox/toggle near the existing column picker) to switch between "Tag only" (current v1 behavior, default) and "Tag → Definition Name" grouping.
-- [ ] **Grouping Logic:** Extend the grouping logic in `logic.js` to produce a two-level structure (tag group containing definition-name sub-rows) without breaking the existing single-level grouping path or its numeric-sum / text-list aggregation rules.
-- [ ] **Untagged Handling:** The synthetic "Untagged" group (see main feature notes) still works correctly when definition-level grouping is on, breaking down by Definition Name within "Untagged" the same as any other tag.
-- [ ] **Persistence:** The chosen grouping mode persists across sessions the same way column selection does (`localStorage`, per browser profile — matching the existing precedent noted in `README.md`).
-- [ ] **Test Coverage:** `verify/verify.mjs` includes assertions for two-level grouping output, including an Untagged + multi-definition case.
-- [ ] **Test Pipeline:** `npm test` inside `/verify` passes with 0 failures.
+- [x] **Toggle:** Add a UI control (e.g. a checkbox/toggle near the existing column picker) to switch between "Tag only" (current v1 behavior, default) and "Tag → Definition Name" grouping.
+- [x] **Grouping Logic:** Extend the grouping logic in `logic.js` to produce a two-level structure (tag group containing definition-name sub-rows) without breaking the existing single-level grouping path or its numeric-sum / text-list aggregation rules.
+- [x] **Untagged Handling:** The synthetic "Untagged" group (see main feature notes) still works correctly when definition-level grouping is on, breaking down by Definition Name within "Untagged" the same as any other tag.
+- [x] **Persistence:** The chosen grouping mode persists across sessions the same way column selection does (`localStorage`, per browser profile — matching the existing precedent noted in `README.md`).
+- [x] **Test Coverage:** `verify/verify.mjs` includes assertions for two-level grouping output, including an Untagged + multi-definition case.
+- [x] **Test Pipeline:** `npm test` inside `/verify` passes with 0 failures.
 
 ### [US-204] Row Selection Selects Matching Components in the Model
 * **As an** Extension User
@@ -160,4 +162,49 @@ Sample prompt to kickoff work by claude based on the Todo.md
 - [ ] **Error Handling:** A formula error for a given component (bad reference, divide-by-zero, etc.) renders a clear per-cell indicator rather than crashing the table or silently showing a wrong value; a completely invalid formula (fails to parse) is flagged in the column-definition UI itself, before it's added.
 - [ ] **Persistence:** Calculated column definitions (name + formula) persist the same way regular column selections do (`localStorage`), and are included when saving/loading a named table configuration (US-207/US-208).
 - [ ] **Test Coverage:** `verify/verify.mjs` includes assertions for: a valid formula referencing built-in and Advanced Attribute fields, a formula with a per-component error, numeric aggregation of a calculated column, and rejection of a circular reference (if supported per the design question above).
+- [ ] **Test Pipeline:** `npm test` inside `/verify` passes with 0 failures.
+
+### [US-210] Treat "Tag" as a Regular Attribute, Not a Hardcoded Table Structure
+
+* **As a** Developer and Extension User
+* **I want** `tag` to be just another field in the field registry — selectable as a column and usable in filters/grouping like any Advanced Attribute — instead of being special-cased as the table's fixed row/group dimension
+* **So that** the "generalize to Component Table" work (US-201) is structurally true, not just cosmetic: the code should no longer assume every table is organized by Tag.
+
+**Context — where Tag is currently hardwired (found during audit, confirm still accurate before implementing):**
+- `logic.js` comment notes `tag` "doubles as the fixed group-by key," and `groupComponentsByTag(components)` is hardwired to `component.tag`, builds `tagLabel` buckets, and forces the `UNTAGGED_LABEL` group last.
+- `app.js` excludes `tag` from the column picker's `availableFields` (assumed to always be the row dimension, not a normal column), defaults new filter rows to `field: 'tag'`, calls `groupComponentsByTag` directly in the render pipeline, and hardcodes the `"Tag"` table header and a `"${groups.length} tag group..."` status string.
+
+**Depends on / pairs with [[US-211]]** (generic grouping) — this story removes Tag's special-cased structural role; US-211 provides the generic replacement mechanism grouping falls back to.
+
+#### Acceptance Criteria
+- [ ] **Column Picker:** Remove the `tag` exclusion from `availableFields` in `app.js` so "Tag" appears as a normal selectable/deselectable column, exactly like any built-in or Advanced Attribute field.
+- [ ] **Filters:** Remove the default-to-`tag` behavior in `addFilter()`; a new filter row's default field is chosen the same way it would be for any other field (e.g. first available field), with no field privileged.
+- [ ] **No Fixed Group-By:** `groupComponentsByTag` no longer runs unconditionally in the render pipeline; when no grouping is configured, the table renders a flat, ungrouped list of components (or the field-agnostic grouping from [[US-211]] applies, if that has landed).
+- [ ] **UI Strings:** Replace hardcoded `"Tag"` header text and `"tag group"` status string in `app.js` with labels derived from the active grouping/column configuration (e.g. the grouped field's `label` from `knownFields`), so no UI text assumes Tag specifically.
+- [ ] **Untagged Semantics Generalized:** The `UNTAGGED_LABEL`/"Untagged" empty-value handling becomes a generic "(blank)"-style fallback usable for any field's grouping, not a Tag-specific constant, while preserving existing behavior when Tag is the field being grouped.
+- [ ] **No Regressions:** Existing Tag-based filtering, column display, and (if landed) US-203/US-211 grouping behavior continue to work when a user explicitly chooses to filter/group by Tag — this story removes special-casing, not the ability to use Tag itself.
+- [ ] **Test Coverage:** `verify/verify.mjs` and `verify/verify-dom.mjs` are updated to assert Tag has no special structural treatment (e.g. a test that groups/filters by a non-Tag field with no Tag column present at all).
+- [ ] **Test Pipeline:** `npm test` inside `/verify` passes with 0 failures.
+
+### [US-211] Generic Attribute-Based Grouping (Any Field, Not Just Tag)
+
+* **As a** Developer and Extension User
+* **I want** to choose which field the table groups by — built-in or Advanced Attribute — the same way I already choose which field to filter by
+* **So that** I can organize the table around whatever attribute matters for a given review (e.g. group by Material, by Layer, or by a custom attribute), instead of grouping being permanently fixed to Tag.
+
+**Design fit with existing architecture:** Filters already model "any field, generically" via `{ field: fieldId, matchType, text }` objects (`logic.js`'s `filterMatches`/`groupFiltersByField`/`filterComponents`) driven off the shared `getFieldValue(component, fieldId)` seam and the `knownFields` registry that the filter UI's `populateFieldSelect` already draws from (`app.js`). Generic grouping should follow the same shape — a `groupByField: fieldId` selection reused through `getFieldValue`/`knownFields`/`populateFieldSelect` — rather than inventing a parallel mechanism. This story replaces the Tag-hardwired `groupComponentsByTag` in `logic.js` with a field-agnostic `groupComponentsByField(components, fieldId)`; do this in concert with [[US-210]], which removes Tag's special-cased role, so the two don't leave the app in an inconsistent half-migrated state.
+
+**Open Design Questions (resolve before/while implementing, do not silently guess):**
+- **Multi-value / list-like attribute values:** Tag grouping assumes one scalar tag per component. Decide how grouping behaves for a field whose value could reasonably be considered multi-valued or highly variable (e.g. free-text Advanced Attributes) — group by exact string value, same as today's Tag equality bucketing, or something else. Document the choice.
+- **Empty/missing value bucket:** Generalize the "Untagged" fallback (see [[US-210]]) to a field-agnostic "(blank)" bucket for any grouped field, and decide the bucket's sort position (Tag grouping today forces Untagged last).
+- **Numeric fields:** Decide whether grouping by a numeric field (e.g. a future numeric built-in from US-206) buckets by exact value or is disallowed/discouraged in the UI, since numeric fields are more naturally aggregated (summed) than grouped.
+- **Relationship to two-level grouping (US-203):** US-203 adds an optional second level (Tag → Definition Name) on top of the *existing* Tag-first grouping. Decide how that story's toggle composes once grouping is generic — e.g. does "second-level grouping" become "any field → any field," or does it stay a fixed second dimension layered on top of whatever the user picks as the primary group-by field. Document the decision so US-203 and this story don't conflict if both land.
+
+#### Acceptance Criteria
+- [ ] **Group-By Control:** Add a UI control (near the existing column picker/filter controls) letting the user choose the field to group rows by, populated from the same `knownFields` registry and `populateFieldSelect` pattern the filter UI already uses.
+- [ ] **Generic Grouping Logic:** Add `groupComponentsByField(components, fieldId)` in `logic.js` that buckets components by `getFieldValue(component, fieldId)`, replacing the Tag-specific `groupComponentsByTag` call in the render pipeline (`app.js`), per the Open Design Questions above for blanks/sort order/numeric fields.
+- [ ] **Works for Any Field Type:** Grouping works identically for built-in fields and Advanced Attribute fields (`attribute::dict::key` ids), with no special-casing beyond what's documented for numeric fields.
+- [ ] **Persistence:** The chosen group-by field persists the same way column selection does (`localStorage`, per `README.md`'s existing persistence precedent), and is included in named saved configurations if [[US-207]]/[[US-208]] have landed.
+- [ ] **UI Labels Follow Selection:** The group header column and any group-count status text reflect the selected field's `label` (from `knownFields`), not a hardcoded "Tag" string (coordinate with [[US-210]] so these aren't duplicated).
+- [ ] **Test Coverage:** `verify/verify.mjs` includes assertions for `groupComponentsByField` grouping by a non-Tag built-in field and by an Advanced Attribute field, including the blank-value bucket case.
 - [ ] **Test Pipeline:** `npm test` inside `/verify` passes with 0 failures.

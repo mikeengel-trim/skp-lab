@@ -13,11 +13,12 @@ import {
   mergeAttributeObjects,
   recordDiscoveredFields,
   filterMatches,
+  isNegatedMatchType,
   groupFiltersByField,
   componentMatchesFilters,
   filterComponents,
   groupComponentsByTag,
-  getSelectionEntities,
+  MISSING_DEFINITION_LABEL,
   isNumericValue,
   isFieldNumeric,
   aggregateColumn,
@@ -148,6 +149,27 @@ test('filterMatches never matches a null value or an empty filter', () => {
   assert.equal(filterMatches('Doors', { matchType: 'contains', text: '' }), false);
 });
 
+test('filterMatches: notEquals and notContains, case-insensitive', () => {
+  assert.equal(filterMatches('Doors', { matchType: 'notEquals', text: 'Windows' }), true);
+  assert.equal(filterMatches('Doors', { matchType: 'notEquals', text: 'doors' }), false);
+  assert.equal(filterMatches('Doors', { matchType: 'notContains', text: 'win' }), true);
+  assert.equal(filterMatches('Doors', { matchType: 'notContains', text: 'oor' }), false);
+});
+
+test('filterMatches: notEquals/notContains match a missing value (a component without the field passes "does not equal/contain")', () => {
+  assert.equal(filterMatches(null, { matchType: 'notEquals', text: 'Doors' }), true);
+  assert.equal(filterMatches(undefined, { matchType: 'notContains', text: 'Doors' }), true);
+  // still requires filter text — an incomplete row matches nothing, negated or not
+  assert.equal(filterMatches(null, { matchType: 'notEquals', text: '' }), false);
+});
+
+test('isNegatedMatchType identifies the two negated match types only', () => {
+  assert.equal(isNegatedMatchType('notEquals'), true);
+  assert.equal(isNegatedMatchType('notContains'), true);
+  assert.equal(isNegatedMatchType('equals'), false);
+  assert.equal(isNegatedMatchType('contains'), false);
+});
+
 test('groupFiltersByField groups by field and skips incomplete rows', () => {
   const filters = [
     { field: 'tag', matchType: 'equals', text: 'Doors' },
@@ -178,6 +200,45 @@ test('componentMatchesFilters: OR within a field, AND across fields', () => {
   assert.equal(componentMatchesFilters(windowComponent, byField), true);
   assert.equal(componentMatchesFilters(fixtureComponent, byField), false); // wrong tag
   assert.equal(componentMatchesFilters(metalDoor, byField), false); // right tag, wrong material
+});
+
+test('componentMatchesFilters: negated filters on the same field AND together instead of OR-ing with positive ones', () => {
+  // "Tag does not equal Doors" AND "Tag does not equal Windows" — excludes both,
+  // rather than the nonsensical "match anything" a plain OR would produce if a
+  // negated filter were combined the same way as two positive ones.
+  const doorComponent = { ...sampleComponent, tag: 'Doors' };
+  const windowComponent = { ...sampleComponent, tag: 'Windows' };
+  const fixtureComponent = { ...sampleComponent, tag: 'Fixtures' };
+
+  const filters = [
+    { field: 'tag', matchType: 'notEquals', text: 'Doors' },
+    { field: 'tag', matchType: 'notEquals', text: 'Windows' },
+  ];
+  const byField = groupFiltersByField(filters);
+
+  assert.equal(componentMatchesFilters(doorComponent, byField), false);
+  assert.equal(componentMatchesFilters(windowComponent, byField), false);
+  assert.equal(componentMatchesFilters(fixtureComponent, byField), true);
+});
+
+test('componentMatchesFilters: a positive and a negated filter on the same field AND together (does not trivially match everything)', () => {
+  // "Tag equals Doors" OR "Tag equals Windows" would normally OR, but mixing in
+  // "Tag does not equal Doors" must still exclude Doors components rather than
+  // matching every component regardless of tag.
+  const doorComponent = { ...sampleComponent, tag: 'Doors' };
+  const windowComponent = { ...sampleComponent, tag: 'Windows' };
+  const fixtureComponent = { ...sampleComponent, tag: 'Fixtures' };
+
+  const filters = [
+    { field: 'tag', matchType: 'equals', text: 'Doors' },
+    { field: 'tag', matchType: 'equals', text: 'Windows' },
+    { field: 'tag', matchType: 'notEquals', text: 'Doors' },
+  ];
+  const byField = groupFiltersByField(filters);
+
+  assert.equal(componentMatchesFilters(doorComponent, byField), false); // matches a positive, but fails the negated AND
+  assert.equal(componentMatchesFilters(windowComponent, byField), true);
+  assert.equal(componentMatchesFilters(fixtureComponent, byField), false); // doesn't match either positive filter
 });
 
 test('filterComponents returns everything unchanged when there are no active filters', () => {
@@ -229,6 +290,61 @@ test('groupComponentsByTag sorts alphabetically with Untagged always last', () =
   ];
   const groups = groupComponentsByTag(components);
   assert.deepEqual(groups.map((g) => g.tagLabel), ['Doors', 'Windows', UNTAGGED_LABEL]);
+});
+
+test('groupComponentsByTag without byDefinition produces no subgroups key (existing single-level shape unchanged)', () => {
+  const groups = groupComponentsByTag([{ ...sampleComponent, tag: 'Doors' }]);
+  assert.equal('subgroups' in groups[0], false);
+});
+
+// ─── Two-level grouping: Tag → Definition Name (US-203) ──────────────────
+
+test('groupComponentsByTag({ byDefinition: true }) breaks each tag group down by Definition Name', () => {
+  const components = [
+    { ...sampleComponent, tag: 'Doors', definitionName: 'Single Door 36in' },
+    { ...sampleComponent, tag: 'Doors', definitionName: 'Single Door 36in' },
+    { ...sampleComponent, tag: 'Doors', definitionName: 'Double Door 60in' },
+    { ...sampleComponent, tag: 'Windows', definitionName: 'Casement 24in' },
+  ];
+  const groups = groupComponentsByTag(components, { byDefinition: true });
+
+  const doors = groups.find((g) => g.tagLabel === 'Doors');
+  assert.deepEqual(
+    doors.subgroups.map((s) => [s.definitionLabel, s.components.length]),
+    [['Double Door 60in', 1], ['Single Door 36in', 2]],
+  );
+
+  const windows = groups.find((g) => g.tagLabel === 'Windows');
+  assert.deepEqual(windows.subgroups.map((s) => s.definitionLabel), ['Casement 24in']);
+});
+
+test('groupComponentsByTag({ byDefinition: true }): a missing Definition Name falls into its own last-sorted bucket', () => {
+  const components = [
+    { ...sampleComponent, tag: 'Doors', definitionName: 'Single Door 36in' },
+    { ...sampleComponent, tag: 'Doors', definitionName: null },
+    { ...sampleComponent, tag: 'Doors', definitionName: '' },
+  ];
+  const groups = groupComponentsByTag(components, { byDefinition: true });
+  const doors = groups.find((g) => g.tagLabel === 'Doors');
+  assert.deepEqual(
+    doors.subgroups.map((s) => s.definitionLabel),
+    ['Single Door 36in', MISSING_DEFINITION_LABEL],
+  );
+  assert.equal(doors.subgroups.find((s) => s.definitionLabel === MISSING_DEFINITION_LABEL).components.length, 2);
+});
+
+test('groupComponentsByTag({ byDefinition: true }): the Untagged tag group also breaks down by Definition Name', () => {
+  const components = [
+    { ...sampleComponent, tag: null, definitionName: 'Single Door 36in' },
+    { ...sampleComponent, tag: '', definitionName: 'Single Door 36in' },
+    { ...sampleComponent, tag: null, definitionName: 'Double Door 60in' },
+  ];
+  const groups = groupComponentsByTag(components, { byDefinition: true });
+  const untagged = groups.find((g) => g.tagLabel === UNTAGGED_LABEL);
+  assert.deepEqual(
+    untagged.subgroups.map((s) => [s.definitionLabel, s.components.length]),
+    [['Double Door 60in', 1], ['Single Door 36in', 2]],
+  );
 });
 
 // ─── Numeric detection ───────────────────────────────────────────────────
