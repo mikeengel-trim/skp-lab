@@ -1,4 +1,4 @@
-// Component Tag Table — model walk (talks to the JSA API) + DOM wiring.
+// Component Table — model walk (talks to the JSA API) + DOM wiring.
 //
 // Read-only: every call below is a getter or a container's `.entities.get()`
 // accessor. There is no `operation.*`/`op.*` call anywhere in this file, so
@@ -121,7 +121,7 @@ async function collectComponents(model) {
 // ─── State, persistence ─────────────────────────────────────────────────
 
 const el = (id) => document.getElementById(id);
-const STORAGE_KEY = 'component-tag-table:v1';
+const STORAGE_KEY = 'component-table:v1';
 
 // Not crypto.randomUUID(): confirmed elsewhere in this workspace
 // (sketchup-tag-color-viewer README, "crypto.randomUUID() threw in a
@@ -150,7 +150,7 @@ function loadState() {
     if (!Array.isArray(parsed.columns) || !Array.isArray(parsed.filters)) return defaultState();
     return parsed;
   } catch (e) {
-    console.warn('[Component Tag Table] could not read saved state, using defaults', e);
+    console.warn('[Component Table] could not read saved state, using defaults', e);
     return defaultState();
   }
 }
@@ -159,7 +159,7 @@ function saveState() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ columns, filters }));
   } catch (e) {
-    console.warn('[Component Tag Table] could not save state', e);
+    console.warn('[Component Table] could not save state', e);
   }
 }
 
@@ -437,7 +437,7 @@ function renderTable() {
   const groups = groupComponentsByTag(filtered);
 
   const wrapper = el('table-wrapper');
-  const table = el('tag-table');
+  const table = el('component-table');
   const emptyState = el('empty-state');
 
   if (allComponents.length > 0 && filtered.length === 0) {
@@ -456,7 +456,7 @@ function renderTable() {
   // see logic.js isFieldNumeric.
   const numericByColumn = new Map(columns.map((fieldId) => [fieldId, isFieldNumeric(filtered, fieldId)]));
 
-  const thead = el('tag-table-head');
+  const thead = el('component-table-head');
   thead.innerHTML = '';
   const headRow = document.createElement('tr');
   headRow.appendChild(th('Tag'));
@@ -464,7 +464,7 @@ function renderTable() {
   for (const fieldId of columns) headRow.appendChild(th(fieldLabel(fieldId)));
   thead.appendChild(headRow);
 
-  const tbody = el('tag-table-body');
+  const tbody = el('component-table-body');
   tbody.innerHTML = '';
   for (const group of groups) {
     const row = document.createElement('tr');
@@ -538,7 +538,7 @@ async function readAndRenderModel() {
     updateFieldOptions(result.availableFields);
     renderTable();
 
-    console.log('[Component Tag Table] entity types seen while walking the model:', result.typeTally);
+    console.log('[Component Table] entity types seen while walking the model:', result.typeTally);
 
     if (result.truncated) {
       showTruncated(
@@ -553,8 +553,8 @@ async function readAndRenderModel() {
     }
     setStatus('Connected', 'connected');
   } catch (e) {
-    console.error('[Component Tag Table] failed to read the model', e);
-    showError(`Component Tag Table could not read the model: ${e.message}`);
+    console.error('[Component Table] failed to read the model', e);
+    showError(`Component Table could not read the model: ${e.message}`);
     setStatus('Error', 'error');
   } finally {
     loading = false;
@@ -569,7 +569,7 @@ async function loadAndRender() {
     const freshModel = await model.refresh();
     model = freshModel || model;
   } catch (e) {
-    console.warn('[Component Tag Table] model.refresh() failed, retrying with the existing reference', e);
+    console.warn('[Component Table] model.refresh() failed, retrying with the existing reference', e);
   }
   await readAndRenderModel();
 }
@@ -579,7 +579,7 @@ async function handleLiveModelChange(streamModel) {
     model = await streamModel.getModel();
     await readAndRenderModel();
   } catch (e) {
-    console.error('[Component Tag Table] live update failed', e);
+    console.error('[Component Table] live update failed', e);
     showError(`Live update failed: ${e.message}`);
   }
 }
@@ -599,7 +599,7 @@ function startLiveUpdates() {
     });
     el('live-indicator').hidden = false;
   } catch (e) {
-    console.warn('[Component Tag Table] live updates unavailable, falling back to manual Refresh', e);
+    console.warn('[Component Table] live updates unavailable, falling back to manual Refresh', e);
   }
 }
 
@@ -627,7 +627,7 @@ async function init() {
     await loadAndRender();
     startLiveUpdates();
   } catch (e) {
-    console.error('[Component Tag Table] connection failed', e);
+    console.error('[Component Table] connection failed', e);
     setStatus('Not connected', 'error');
     showError(`Not connected to SketchUp (${e.message}) — this panel only works when run inside SketchUp.`);
   }

@@ -20,11 +20,11 @@ Sample prompt to kickoff work by claude based on the Todo.md
 * **So that** the tool is understood as a generic component matrix rather than a utility strictly limited to sorting by SketchUp tags.
 
 #### Acceptance Criteria
-- [ ] **Repository Configuration:** Update the directory name or references within metadata files (like `manifest.json` and `package.json`) to reflect the new `sketchup-component-table` naming schema.
-- [ ] **User Interface Headers:** Change the primary application header text in `index.html` from "Component Tag Table" or "Component Count by Tag" to "Component Table".
-- [ ] **Documentation Updates:** Rewrite the `README.md` file to scrub explicit "Tag Table" terminology. Redraft sentences to frame *tags* as just one example of an attribute column or grouping constraint rather than the core architecture.
-- [ ] **Code Refactoring:** Audit `app.js`, `logic.js`, and the test suites (`verify/verify.mjs`, `verify/verify-dom.mjs`) for variable names, comments, or hardcoded strings that explicitly pigeonhole the extension as tag-exclusive, updating them to generic component nomenclature.
-- [ ] **Test Pipeline:** Ensure that running `npm test` inside the `/verify` directory passes with 0 failures after strings and references have been updated.
+- [x] **Repository Configuration:** Update the directory name or references within metadata files (like `manifest.json` and `package.json`) to reflect the new `sketchup-component-table` naming schema.
+- [x] **User Interface Headers:** Change the primary application header text in `index.html` from "Component Tag Table" or "Component Count by Tag" to "Component Table".
+- [x] **Documentation Updates:** Rewrite the `README.md` file to scrub explicit "Tag Table" terminology. Redraft sentences to frame *tags* as just one example of an attribute column or grouping constraint rather than the core architecture.
+- [x] **Code Refactoring:** Audit `app.js`, `logic.js`, and the test suites (`verify/verify.mjs`, `verify/verify-dom.mjs`) for variable names, comments, or hardcoded strings that explicitly pigeonhole the extension as tag-exclusive, updating them to generic component nomenclature.
+- [x] **Test Pipeline:** Ensure that running `npm test` inside the `/verify` directory passes with 0 failures after strings and references have been updated.
 
 ### [US-202] Add "Does Not Equal" and "Does Not Contain" Filter Match Types
 * **As a** Developer and Extension User

@@ -37,7 +37,7 @@ const assertions = [
   ['columns-list container exists and starts empty', document.getElementById('columns-list').innerHTML.trim(), ''],
   ['filters-list container exists and starts empty', document.getElementById('filters-list').innerHTML.trim(), ''],
   ['clear-filters-btn starts disabled', document.getElementById('clear-filters-btn').hasAttribute('disabled'), true],
-  ['table starts visible (not hidden) in static markup', document.getElementById('tag-table').hasAttribute('hidden'), false],
+  ['table starts visible (not hidden) in static markup', document.getElementById('component-table').hasAttribute('hidden'), false],
   ['empty-state starts hidden', document.getElementById('empty-state').hasAttribute('hidden'), true],
   ['add-column-select exists with placeholder option', document.getElementById('add-column-select').options.length >= 1, true],
 ];
