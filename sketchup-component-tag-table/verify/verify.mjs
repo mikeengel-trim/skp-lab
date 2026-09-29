@@ -18,6 +18,7 @@ import {
   componentMatchesFilters,
   filterComponents,
   groupComponentsByTag,
+  MISSING_DEFINITION_LABEL,
   isNumericValue,
   isFieldNumeric,
   aggregateColumn,
@@ -266,6 +267,61 @@ test('groupComponentsByTag sorts alphabetically with Untagged always last', () =
   ];
   const groups = groupComponentsByTag(components);
   assert.deepEqual(groups.map((g) => g.tagLabel), ['Doors', 'Windows', UNTAGGED_LABEL]);
+});
+
+test('groupComponentsByTag without byDefinition produces no subgroups key (existing single-level shape unchanged)', () => {
+  const groups = groupComponentsByTag([{ ...sampleComponent, tag: 'Doors' }]);
+  assert.equal('subgroups' in groups[0], false);
+});
+
+// ─── Two-level grouping: Tag → Definition Name (US-203) ──────────────────
+
+test('groupComponentsByTag({ byDefinition: true }) breaks each tag group down by Definition Name', () => {
+  const components = [
+    { ...sampleComponent, tag: 'Doors', definitionName: 'Single Door 36in' },
+    { ...sampleComponent, tag: 'Doors', definitionName: 'Single Door 36in' },
+    { ...sampleComponent, tag: 'Doors', definitionName: 'Double Door 60in' },
+    { ...sampleComponent, tag: 'Windows', definitionName: 'Casement 24in' },
+  ];
+  const groups = groupComponentsByTag(components, { byDefinition: true });
+
+  const doors = groups.find((g) => g.tagLabel === 'Doors');
+  assert.deepEqual(
+    doors.subgroups.map((s) => [s.definitionLabel, s.components.length]),
+    [['Double Door 60in', 1], ['Single Door 36in', 2]],
+  );
+
+  const windows = groups.find((g) => g.tagLabel === 'Windows');
+  assert.deepEqual(windows.subgroups.map((s) => s.definitionLabel), ['Casement 24in']);
+});
+
+test('groupComponentsByTag({ byDefinition: true }): a missing Definition Name falls into its own last-sorted bucket', () => {
+  const components = [
+    { ...sampleComponent, tag: 'Doors', definitionName: 'Single Door 36in' },
+    { ...sampleComponent, tag: 'Doors', definitionName: null },
+    { ...sampleComponent, tag: 'Doors', definitionName: '' },
+  ];
+  const groups = groupComponentsByTag(components, { byDefinition: true });
+  const doors = groups.find((g) => g.tagLabel === 'Doors');
+  assert.deepEqual(
+    doors.subgroups.map((s) => s.definitionLabel),
+    ['Single Door 36in', MISSING_DEFINITION_LABEL],
+  );
+  assert.equal(doors.subgroups.find((s) => s.definitionLabel === MISSING_DEFINITION_LABEL).components.length, 2);
+});
+
+test('groupComponentsByTag({ byDefinition: true }): the Untagged tag group also breaks down by Definition Name', () => {
+  const components = [
+    { ...sampleComponent, tag: null, definitionName: 'Single Door 36in' },
+    { ...sampleComponent, tag: '', definitionName: 'Single Door 36in' },
+    { ...sampleComponent, tag: null, definitionName: 'Double Door 60in' },
+  ];
+  const groups = groupComponentsByTag(components, { byDefinition: true });
+  const untagged = groups.find((g) => g.tagLabel === UNTAGGED_LABEL);
+  assert.deepEqual(
+    untagged.subgroups.map((s) => [s.definitionLabel, s.components.length]),
+    [['Double Door 60in', 1], ['Single Door 36in', 2]],
+  );
 });
 
 // ─── Numeric detection ───────────────────────────────────────────────────
