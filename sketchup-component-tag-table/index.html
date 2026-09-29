@@ -63,6 +63,19 @@
     </div>
   </div>
 
+  <div class="toolbar">
+    <div class="toolbar-group saved-configs-group">
+      <span class="toolbar-label">Saved Tables</span>
+      <select id="saved-configs-select">
+        <option value="">No saved tables yet</option>
+      </select>
+      <button class="btn-link" id="rename-config-btn" disabled>Rename</button>
+      <button class="btn-link" id="delete-config-btn" disabled>Delete</button>
+      <button class="btn-add" id="save-config-btn">+ Save table as…</button>
+      <div class="saved-config-inline" id="saved-config-inline" hidden></div>
+    </div>
+  </div>
+
   <div class="table-wrapper" id="table-wrapper">
     <table id="component-table">
       <thead id="component-table-head"></thead>

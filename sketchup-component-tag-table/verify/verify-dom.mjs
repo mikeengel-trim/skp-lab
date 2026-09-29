@@ -149,6 +149,22 @@ globalThis.localStorage = {
   getItem: (k) => (k in localStorageData ? localStorageData[k] : null),
   setItem: (k, v) => { localStorageData[k] = v; },
 };
+
+// Seeded ahead of the app.js import (US-207/US-208): a saved configuration
+// referencing an Advanced Attribute field this mocked session never
+// discovers, to prove loading it degrades gracefully (drops the missing
+// field) instead of crashing — has to be seeded before import since
+// app.js's savedConfigs array is only ever read from localStorage once, at
+// module load.
+localStorageData['component-table:saved-configs:v1'] = JSON.stringify([{
+  id: 'config-ghost',
+  name: 'Ghost Field View',
+  columns: ['definitionName', 'attribute::IFC::Status'],
+  filters: [],
+  groupByField: 'attribute::IFC::Status',
+  groupByDefinition: false,
+  savedAt: '2024-01-01T00:00:00.000Z',
+}]);
 globalThis.SketchUpApi = {
   connect: async () => {},
   disconnect: () => {},
@@ -370,6 +386,173 @@ try {
   // future assertions appended after this block.
   groupByFieldSelect.value = 'tag';
   groupByFieldSelect.dispatchEvent(new execDom.window.Event('change', { bubbles: true }));
+
+  // ─── Saved table configurations execution tests (US-207/US-208) ─────────
+
+  const savedConfigsSelect = doc.getElementById('saved-configs-select');
+  const optionLabels = () => [...savedConfigsSelect.options].map((o) => o.textContent);
+
+  // Seeded "Ghost Field View" (a since-removed Advanced Attribute field)
+  // populates the dropdown without crashing anything at load.
+  try {
+    if (optionLabels().includes('Ghost Field View')) pass++;
+    else { fail++; console.error('FAIL expected the seeded "Ghost Field View" saved config in the dropdown', optionLabels()); }
+  } catch (e) {
+    fail++;
+    console.error('FAIL checking the seeded saved config threw', e);
+  }
+
+  // Save current state ("Save table as…" inline flow).
+  try {
+    doc.getElementById('save-config-btn').dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+    const inlineInput = doc.querySelector('.saved-config-name-input');
+    inlineInput.value = 'Fixtures Audit';
+    inlineInput.dispatchEvent(new execDom.window.Event('input', { bubbles: true }));
+    const saveSubmitBtn = [...doc.querySelectorAll('#saved-config-inline button')].find((b) => b.textContent === 'Save');
+    saveSubmitBtn.dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+
+    if (optionLabels().includes('Fixtures Audit')) pass++;
+    else { fail++; console.error('FAIL saving "Fixtures Audit" did not add it to the dropdown', optionLabels()); }
+
+    if (doc.getElementById('saved-config-inline').hidden === true) pass++;
+    else { fail++; console.error('FAIL the inline save UI did not close after a successful save'); }
+
+    if (savedConfigsSelect.value !== '' && savedConfigsSelect.selectedOptions[0]?.textContent === 'Fixtures Audit') pass++;
+    else { fail++; console.error('FAIL the dropdown did not select the just-saved "Fixtures Audit" entry'); }
+
+    if (doc.getElementById('rename-config-btn').disabled === false && doc.getElementById('delete-config-btn').disabled === false) pass++;
+    else { fail++; console.error('FAIL Rename/Delete should be enabled once a saved config is selected'); }
+  } catch (e) {
+    fail += 4;
+    console.error('FAIL "Save table as…" execution test threw', e);
+  }
+
+  // Loading a saved config replaces the current columns/filters (US-208).
+  try {
+    const addColumnSelect = doc.getElementById('add-column-select');
+    addColumnSelect.value = 'material';
+    addColumnSelect.dispatchEvent(new execDom.window.Event('change', { bubbles: true }));
+    const chipLabelsNow = () => [...doc.querySelectorAll('#columns-list .chip')].map((c) => c.querySelector('.chip-label').textContent);
+    const beforeReload = chipLabelsNow();
+
+    // Re-select "Fixtures Audit" (already selected, but simulate picking it
+    // again the way a user would after making unsaved edits) to confirm it
+    // discards the just-added "Material" column — US-208's decided
+    // "silently discard unsaved changes" behavior.
+    savedConfigsSelect.value = '';
+    savedConfigsSelect.dispatchEvent(new execDom.window.Event('change', { bubbles: true }));
+    const fixturesAuditOption = [...savedConfigsSelect.options].find((o) => o.textContent === 'Fixtures Audit');
+    savedConfigsSelect.value = fixturesAuditOption.value;
+    savedConfigsSelect.dispatchEvent(new execDom.window.Event('change', { bubbles: true }));
+
+    if (beforeReload.includes('Material') && !chipLabelsNow().includes('Material')) pass++;
+    else { fail++; console.error('FAIL loading "Fixtures Audit" did not discard the unsaved "Material" column', beforeReload, chipLabelsNow()); }
+  } catch (e) {
+    fail++;
+    console.error('FAIL loading a saved config execution test threw', e);
+  }
+
+  // Overwrite confirmation: saving under the same name prompts before
+  // replacing rather than silently duplicating.
+  try {
+    doc.getElementById('save-config-btn').dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+    const inlineInput = doc.querySelector('.saved-config-name-input');
+    inlineInput.value = 'Fixtures Audit';
+    const saveSubmitBtn = [...doc.querySelectorAll('#saved-config-inline button')].find((b) => b.textContent === 'Save');
+    saveSubmitBtn.dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+
+    const confirmText = doc.querySelector('.saved-config-confirm-text')?.textContent;
+    if (confirmText?.includes('already exists')) pass++;
+    else { fail++; console.error(`FAIL expected an overwrite confirmation, got "${confirmText}"`); }
+
+    const overwriteBtn = [...doc.querySelectorAll('#saved-config-inline button')].find((b) => b.textContent === 'Overwrite');
+    overwriteBtn.dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+
+    const fixturesAuditCount = optionLabels().filter((l) => l === 'Fixtures Audit').length;
+    if (fixturesAuditCount === 1) pass++;
+    else { fail++; console.error(`FAIL overwrite should not duplicate the entry, found ${fixturesAuditCount} "Fixtures Audit" options`); }
+  } catch (e) {
+    fail += 2;
+    console.error('FAIL overwrite-confirmation execution test threw', e);
+  }
+
+  // Rename.
+  try {
+    doc.getElementById('rename-config-btn').dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+    const inlineInput = doc.querySelector('.saved-config-name-input');
+    if (inlineInput.value === 'Fixtures Audit') pass++;
+    else { fail++; console.error(`FAIL rename input should be pre-filled with the current name, got "${inlineInput.value}"`); }
+
+    inlineInput.value = 'Fixtures Review';
+    const renameSubmitBtn = [...doc.querySelectorAll('#saved-config-inline button')].find((b) => b.textContent === 'Rename');
+    renameSubmitBtn.dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+
+    if (optionLabels().includes('Fixtures Review') && !optionLabels().includes('Fixtures Audit')) pass++;
+    else { fail++; console.error('FAIL renaming did not update the dropdown option', optionLabels()); }
+  } catch (e) {
+    fail += 2;
+    console.error('FAIL rename execution test threw', e);
+  }
+
+  // Delete.
+  try {
+    doc.getElementById('delete-config-btn').dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+    const confirmText = doc.querySelector('.saved-config-confirm-text')?.textContent;
+    if (confirmText?.includes('Fixtures Review')) pass++;
+    else { fail++; console.error(`FAIL expected a delete confirmation naming "Fixtures Review", got "${confirmText}"`); }
+
+    const deleteBtn = [...doc.querySelectorAll('#saved-config-inline button')].find((b) => b.textContent === 'Delete');
+    deleteBtn.dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+
+    if (!optionLabels().includes('Fixtures Review')) pass++;
+    else { fail++; console.error('FAIL deleting "Fixtures Review" did not remove it from the dropdown', optionLabels()); }
+  } catch (e) {
+    fail += 2;
+    console.error('FAIL delete execution test threw', e);
+  }
+
+  // Loading the seeded "Ghost Field View" (references a since-removed
+  // field) degrades gracefully: drops the missing column/group-by field
+  // rather than crashing the table (US-207).
+  try {
+    const ghostOption = [...savedConfigsSelect.options].find((o) => o.textContent === 'Ghost Field View');
+    savedConfigsSelect.value = ghostOption.value;
+    savedConfigsSelect.dispatchEvent(new execDom.window.Event('change', { bubbles: true }));
+
+    const chipLabelsNow = [...doc.querySelectorAll('#columns-list .chip')].map((c) => c.querySelector('.chip-label').textContent);
+    if (chipLabelsNow.includes('Definition Name') && !chipLabelsNow.some((l) => l.includes('IFC'))) pass++;
+    else { fail++; console.error('FAIL loading "Ghost Field View" should keep the known Definition Name column and drop the missing IFC one', chipLabelsNow); }
+
+    if (doc.getElementById('component-table').hidden === false) pass++;
+    else { fail++; console.error('FAIL the table should still render (not crash) after loading a config with a missing field'); }
+
+    // groupByField also degraded back to 'tag' rather than staying on the
+    // missing attribute field — the header reflects that.
+    if (firstHeaderCell()?.textContent === 'Tag') pass++;
+    else { fail++; console.error(`FAIL expected group-by to fall back to "Tag" after the missing field, got "${firstHeaderCell()?.textContent}"`); }
+  } catch (e) {
+    fail += 3;
+    console.error('FAIL loading a saved config with a missing field threw instead of degrading gracefully', e);
+  }
+
+  // Empty state: after removing every saved config, the dropdown reflects
+  // that clearly rather than showing a blank/broken list (US-208).
+  try {
+    for (const opt of [...savedConfigsSelect.options]) {
+      if (!opt.value) continue;
+      savedConfigsSelect.value = opt.value;
+      savedConfigsSelect.dispatchEvent(new execDom.window.Event('change', { bubbles: true }));
+      doc.getElementById('delete-config-btn').dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+      const deleteBtn = [...doc.querySelectorAll('#saved-config-inline button')].find((b) => b.textContent === 'Delete');
+      deleteBtn?.dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+    }
+
+    if (savedConfigsSelect.disabled === true && optionLabels().includes('No saved tables yet')) pass++;
+    else { fail++; console.error('FAIL expected the dropdown to show its empty state once every saved config is deleted', savedConfigsSelect.disabled, optionLabels()); }
+  } catch (e) {
+    fail++;
+    console.error('FAIL empty-state (saved configs) execution test threw', e);
+  }
 } catch (e) {
   fail += 3;
   console.error('FAIL click-to-select execution test threw', e);

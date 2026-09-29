@@ -27,6 +27,8 @@ import {
   aggregateColumn,
   formatColumnCell,
   MIXED_VALUE_THRESHOLD,
+  sortSavedConfigs,
+  pruneMissingFields,
 } from '../logic.js';
 
 let pass = 0, fail = 0;
@@ -464,6 +466,49 @@ test('formatColumnCell renders each summary type, mixed collapsed vs expanded', 
   assert.equal(formatColumnCell({ type: 'list', values: ['Oak', 'Maple'] }), 'Oak, Maple');
   assert.equal(formatColumnCell({ type: 'mixed', values: ['A', 'B', 'C', 'D'], count: 4 }, false), 'Mixed (4)');
   assert.equal(formatColumnCell({ type: 'mixed', values: ['A', 'B', 'C', 'D'], count: 4 }, true), 'A, B, C, D');
+});
+
+// ─── Saved table configurations (US-207/US-208) ───────────────────────────
+
+test('sortSavedConfigs sorts alphabetically by name, case-insensitively', () => {
+  const configs = [{ name: 'zebra' }, { name: 'Apple' }, { name: 'banana' }];
+  assert.deepEqual(sortSavedConfigs(configs).map((c) => c.name), ['Apple', 'banana', 'zebra']);
+});
+
+test('sortSavedConfigs does not mutate its input array', () => {
+  const configs = [{ name: 'b' }, { name: 'a' }];
+  sortSavedConfigs(configs);
+  assert.deepEqual(configs.map((c) => c.name), ['b', 'a']);
+});
+
+test('pruneMissingFields drops columns/filters referencing an unknown field', () => {
+  const config = {
+    columns: ['definitionName', 'attribute::IFC::Status'],
+    filters: [
+      { field: 'material', matchType: 'contains', text: 'Oak' },
+      { field: 'attribute::IFC::Status', matchType: 'equals', text: 'Installed' },
+    ],
+    groupByField: 'tag',
+    groupByDefinition: false,
+  };
+  const knownFieldIds = ['tag', 'name', 'definitionName', 'material', 'guid', 'description'];
+  const pruned = pruneMissingFields(config, knownFieldIds);
+  assert.deepEqual(pruned.columns, ['definitionName']);
+  assert.deepEqual(pruned.filters, [{ field: 'material', matchType: 'contains', text: 'Oak' }]);
+});
+
+test('pruneMissingFields falls back an unknown groupByField to "tag" (always a known built-in)', () => {
+  const config = { columns: [], filters: [], groupByField: 'attribute::IFC::Status', groupByDefinition: false };
+  const pruned = pruneMissingFields(config, ['tag', 'name']);
+  assert.equal(pruned.groupByField, 'tag');
+});
+
+test('pruneMissingFields keeps a known groupByField unchanged and does not mutate the input', () => {
+  const config = { columns: ['material'], filters: [], groupByField: 'material', groupByDefinition: true };
+  const pruned = pruneMissingFields(config, ['tag', 'material']);
+  assert.equal(pruned.groupByField, 'material');
+  assert.equal(pruned.groupByDefinition, true);
+  assert.deepEqual(config.columns, ['material']); // original untouched
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

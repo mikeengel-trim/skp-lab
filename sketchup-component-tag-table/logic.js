@@ -370,3 +370,30 @@ export function formatColumnCell(summary, expanded) {
     default: return '—';
   }
 }
+
+// ─── Saved table configurations (US-207/US-208) ──────────────────────────
+
+// Alphabetical by name, case-insensitive — the documented sort order for
+// the US-208 dropdown (an explicit choice over "most-recently-saved",
+// since a reviewer picking between named views like "Untagged Audit" and
+// "Door Schedule" is scanning for a name, not a save time).
+export function sortSavedConfigs(configs) {
+  return [...configs].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+}
+
+// Degrades a saved configuration gracefully when it references a column,
+// filter, or group-by field that the currently-open model hasn't
+// discovered (Advanced Attribute fields are only known once the model walk
+// has actually seen them — see README.md). Drops any column/filter
+// referencing an unknown field rather than crashing the table, and falls
+// back the group-by field to 'tag' (always known — a built-in) if it's
+// unknown too. Returns a new object; never mutates `config`.
+export function pruneMissingFields(config, knownFieldIds) {
+  const known = new Set(knownFieldIds);
+  return {
+    ...config,
+    columns: config.columns.filter((fieldId) => known.has(fieldId)),
+    filters: config.filters.filter((filter) => known.has(filter.field)),
+    groupByField: known.has(config.groupByField) ? config.groupByField : 'tag',
+  };
+}
