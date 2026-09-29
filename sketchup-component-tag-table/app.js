@@ -1,10 +1,12 @@
 // Component Table — model walk (talks to the JSA API) + DOM wiring.
 //
-// Read-only: every call below is a getter or a container's `.entities.get()`
-// accessor. There is no `operation.*`/`op.*` call anywhere in this file, so
-// tags, materials, attributes and the active scene are never touched — this
-// extension only ever reads the model, per the PRD's "read-only in v1"
-// scope decision.
+// No model *mutation* anywhere in this file — there is no `operation.*`/
+// `op.*` call, so tags, materials, attributes and the active scene are
+// never edited. `model.updateSelection` (US-204's click-to-select) IS a
+// live JSA call, but it's a Selection API call, not an operation/mutation
+// one: it changes what's highlighted in the model, not the model's content,
+// so it doesn't break the "no editing" guarantee the PRD's "read-only in
+// v1" scope decision was actually about.
 //
 // Pure aggregation/filtering/grouping logic lives in ./logic.js and is
 // imported here rather than duplicated, so `verify/verify.mjs` tests
@@ -18,6 +20,7 @@ import {
   recordDiscoveredFields,
   filterComponents,
   groupComponentsByTag,
+  getSelectionEntities,
   isFieldNumeric,
   aggregateColumn,
   formatColumnCell,
@@ -69,6 +72,12 @@ async function collectComponents(model) {
       guid: instance.guid || null,
       description: instance.description || null,
       attributes,
+      // Kept for US-204's click-to-select: a persistent Entity (not an
+      // ephemeral operation Ref), so it's still valid to pass to
+      // model.updateSelection long after this walk finishes. Never
+      // serialized/persisted — components live only in the in-memory
+      // allComponents array for the current session.
+      instanceRef: instance,
     };
   }
 
@@ -540,6 +549,24 @@ function renderTable() {
   el('footer-summary').textContent =
     `${filtered.length} of ${allComponents.length} component${allComponents.length === 1 ? '' : 's'} · ` +
     `${groups.length} tag group${groups.length === 1 ? '' : 's'}${groupingNote}${truncatedNote}`;
+}
+
+// Click-to-select (US-204): selects the JSA entities behind a clicked row's
+// components, replacing whatever is currently selected in the model — same
+// "replace" semantics as clicking an entity directly in the SketchUp
+// viewport, not an additive multi-row selection. A tag-group summary row
+// selects every component instance in that group (and, when Tag →
+// Definition Name grouping is on, a definition sub-row selects just that
+// sub-group's instances) since `group.components`/`sub.components` already
+// holds exactly the right instance set either way.
+function selectRowInModel(rowComponents) {
+  if (!model) return;
+  const entities = getSelectionEntities(rowComponents);
+  if (entities.length === 0) return;
+  model.updateSelection(entities, 'set').catch((e) => {
+    console.error('[Component Table] failed to select components in the model', e);
+    showError(`Could not select components in the model: ${e.message}`);
+  });
 }
 
 function th(text) {
