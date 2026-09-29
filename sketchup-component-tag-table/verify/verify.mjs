@@ -17,7 +17,9 @@ import {
   groupFiltersByField,
   componentMatchesFilters,
   filterComponents,
-  groupComponentsByTag,
+  groupComponentsByField,
+  blankBucketLabel,
+  BLANK_LABEL,
   getSelectionEntities,
   MISSING_DEFINITION_LABEL,
   isNumericValue,
@@ -270,63 +272,93 @@ test('getSelectionEntities returns an empty array for an empty component list', 
   assert.deepEqual(getSelectionEntities([]), []);
 });
 
-// ─── Grouping by tag ─────────────────────────────────────────────────────
+// ─── Generic grouping by field (US-210/US-211) ───────────────────────────
 
-test('groupComponentsByTag buckets missing/empty tags as Untagged', () => {
+test('blankBucketLabel: Tag keeps the "Untagged" wording, every other field gets the generic BLANK_LABEL', () => {
+  assert.equal(blankBucketLabel('tag'), UNTAGGED_LABEL);
+  assert.equal(blankBucketLabel('material'), BLANK_LABEL);
+  assert.equal(blankBucketLabel(encodeAttributeFieldId('IFC', 'Status')), BLANK_LABEL);
+});
+
+test('groupComponentsByField(tag) buckets missing/empty tags as Untagged (no behavior change from the old Tag-only grouping)', () => {
   const components = [
     { ...sampleComponent, tag: 'Doors' },
     { ...sampleComponent, tag: null },
     { ...sampleComponent, tag: '' },
   ];
-  const groups = groupComponentsByTag(components);
-  const untagged = groups.find((g) => g.tagLabel === UNTAGGED_LABEL);
+  const groups = groupComponentsByField(components, 'tag');
+  const untagged = groups.find((g) => g.groupLabel === UNTAGGED_LABEL);
   assert.equal(untagged.components.length, 2);
 });
 
-test('groupComponentsByTag sorts alphabetically with Untagged always last', () => {
+test('groupComponentsByField(tag) sorts alphabetically with Untagged always last', () => {
   const components = [
     { ...sampleComponent, tag: 'Windows' },
     { ...sampleComponent, tag: null },
     { ...sampleComponent, tag: 'Doors' },
   ];
-  const groups = groupComponentsByTag(components);
-  assert.deepEqual(groups.map((g) => g.tagLabel), ['Doors', 'Windows', UNTAGGED_LABEL]);
+  const groups = groupComponentsByField(components, 'tag');
+  assert.deepEqual(groups.map((g) => g.groupLabel), ['Doors', 'Windows', UNTAGGED_LABEL]);
 });
 
-test('groupComponentsByTag without byDefinition produces no subgroups key (existing single-level shape unchanged)', () => {
-  const groups = groupComponentsByTag([{ ...sampleComponent, tag: 'Doors' }]);
+test('groupComponentsByField groups by a non-Tag built-in field, with a generic "(blank)" bucket sorted last', () => {
+  const components = [
+    { ...sampleComponent, material: 'Oak' },
+    { ...sampleComponent, material: 'Steel' },
+    { ...sampleComponent, material: 'Oak' },
+    { ...sampleComponent, material: null },
+  ];
+  const groups = groupComponentsByField(components, 'material');
+  assert.deepEqual(groups.map((g) => g.groupLabel), ['Oak', 'Steel', BLANK_LABEL]);
+  assert.equal(groups.find((g) => g.groupLabel === 'Oak').components.length, 2);
+  assert.equal(groups.find((g) => g.groupLabel === BLANK_LABEL).components.length, 1);
+});
+
+test('groupComponentsByField groups by an Advanced Attribute field the same way', () => {
+  const id = encodeAttributeFieldId('IFC', 'Status');
+  const components = [
+    { ...sampleComponent, attributes: { IFC: { Status: 'Installed' } } },
+    { ...sampleComponent, attributes: { IFC: { Status: 'Planned' } } },
+    { ...sampleComponent, attributes: {} }, // missing the attribute entirely -> blank bucket
+  ];
+  const groups = groupComponentsByField(components, id);
+  assert.deepEqual(groups.map((g) => g.groupLabel), ['Installed', 'Planned', BLANK_LABEL]);
+});
+
+test('groupComponentsByField without byDefinition produces no subgroups key (existing single-level shape unchanged)', () => {
+  const groups = groupComponentsByField([{ ...sampleComponent, tag: 'Doors' }], 'tag');
   assert.equal('subgroups' in groups[0], false);
 });
 
-// ─── Two-level grouping: Tag → Definition Name (US-203) ──────────────────
+// ─── Two-level grouping: <field> → Definition Name (US-203/US-211) ───────
 
-test('groupComponentsByTag({ byDefinition: true }) breaks each tag group down by Definition Name', () => {
+test('groupComponentsByField({ byDefinition: true }) breaks each group down by Definition Name', () => {
   const components = [
     { ...sampleComponent, tag: 'Doors', definitionName: 'Single Door 36in' },
     { ...sampleComponent, tag: 'Doors', definitionName: 'Single Door 36in' },
     { ...sampleComponent, tag: 'Doors', definitionName: 'Double Door 60in' },
     { ...sampleComponent, tag: 'Windows', definitionName: 'Casement 24in' },
   ];
-  const groups = groupComponentsByTag(components, { byDefinition: true });
+  const groups = groupComponentsByField(components, 'tag', { byDefinition: true });
 
-  const doors = groups.find((g) => g.tagLabel === 'Doors');
+  const doors = groups.find((g) => g.groupLabel === 'Doors');
   assert.deepEqual(
     doors.subgroups.map((s) => [s.definitionLabel, s.components.length]),
     [['Double Door 60in', 1], ['Single Door 36in', 2]],
   );
 
-  const windows = groups.find((g) => g.tagLabel === 'Windows');
+  const windows = groups.find((g) => g.groupLabel === 'Windows');
   assert.deepEqual(windows.subgroups.map((s) => s.definitionLabel), ['Casement 24in']);
 });
 
-test('groupComponentsByTag({ byDefinition: true }): a missing Definition Name falls into its own last-sorted bucket', () => {
+test('groupComponentsByField({ byDefinition: true }): a missing Definition Name falls into its own last-sorted bucket', () => {
   const components = [
     { ...sampleComponent, tag: 'Doors', definitionName: 'Single Door 36in' },
     { ...sampleComponent, tag: 'Doors', definitionName: null },
     { ...sampleComponent, tag: 'Doors', definitionName: '' },
   ];
-  const groups = groupComponentsByTag(components, { byDefinition: true });
-  const doors = groups.find((g) => g.tagLabel === 'Doors');
+  const groups = groupComponentsByField(components, 'tag', { byDefinition: true });
+  const doors = groups.find((g) => g.groupLabel === 'Doors');
   assert.deepEqual(
     doors.subgroups.map((s) => s.definitionLabel),
     ['Single Door 36in', MISSING_DEFINITION_LABEL],
@@ -334,17 +366,30 @@ test('groupComponentsByTag({ byDefinition: true }): a missing Definition Name fa
   assert.equal(doors.subgroups.find((s) => s.definitionLabel === MISSING_DEFINITION_LABEL).components.length, 2);
 });
 
-test('groupComponentsByTag({ byDefinition: true }): the Untagged tag group also breaks down by Definition Name', () => {
+test('groupComponentsByField({ byDefinition: true }): the Untagged tag group also breaks down by Definition Name', () => {
   const components = [
     { ...sampleComponent, tag: null, definitionName: 'Single Door 36in' },
     { ...sampleComponent, tag: '', definitionName: 'Single Door 36in' },
     { ...sampleComponent, tag: null, definitionName: 'Double Door 60in' },
   ];
-  const groups = groupComponentsByTag(components, { byDefinition: true });
-  const untagged = groups.find((g) => g.tagLabel === UNTAGGED_LABEL);
+  const groups = groupComponentsByField(components, 'tag', { byDefinition: true });
+  const untagged = groups.find((g) => g.groupLabel === UNTAGGED_LABEL);
   assert.deepEqual(
     untagged.subgroups.map((s) => [s.definitionLabel, s.components.length]),
     [['Double Door 60in', 1], ['Single Door 36in', 2]],
+  );
+});
+
+test('groupComponentsByField({ byDefinition: true }) works with a non-Tag primary field\'s blank bucket too', () => {
+  const components = [
+    { ...sampleComponent, material: null, definitionName: 'Single Door 36in' },
+    { ...sampleComponent, material: '', definitionName: 'Double Door 60in' },
+  ];
+  const groups = groupComponentsByField(components, 'material', { byDefinition: true });
+  const blank = groups.find((g) => g.groupLabel === BLANK_LABEL);
+  assert.deepEqual(
+    blank.subgroups.map((s) => s.definitionLabel).sort(),
+    ['Double Door 60in', 'Single Door 36in'],
   );
 });
 

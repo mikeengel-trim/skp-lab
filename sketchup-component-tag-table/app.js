@@ -14,12 +14,12 @@
 
 import {
   BUILTIN_FIELDS,
-  UNTAGGED_LABEL,
   attributesToPlainObject,
   mergeAttributeObjects,
   recordDiscoveredFields,
   filterComponents,
-  groupComponentsByTag,
+  groupComponentsByField,
+  blankBucketLabel,
   getSelectionEntities,
   isFieldNumeric,
   aggregateColumn,
@@ -146,9 +146,11 @@ function makeId(prefix) {
 
 function defaultState() {
   // Seeded with one column (Definition Name) so the table shows more than
-  // just Tag + Count on first open, without presuming which Advanced
-  // Attributes (if any) a given model actually has.
-  return { columns: ['definitionName'], filters: [], groupByDefinition: false };
+  // just the group-by field + Count on first open, without presuming which
+  // Advanced Attributes (if any) a given model actually has. `groupByField`
+  // defaults to 'tag' — same v1 behavior as before US-210/US-211, just no
+  // longer the only option.
+  return { columns: ['definitionName'], filters: [], groupByDefinition: false, groupByField: 'tag' };
 }
 
 function loadState() {
@@ -157,7 +159,12 @@ function loadState() {
     if (!raw) return defaultState();
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed.columns) || !Array.isArray(parsed.filters)) return defaultState();
-    return { columns: parsed.columns, filters: parsed.filters, groupByDefinition: !!parsed.groupByDefinition };
+    return {
+      columns: parsed.columns,
+      filters: parsed.filters,
+      groupByDefinition: !!parsed.groupByDefinition,
+      groupByField: typeof parsed.groupByField === 'string' && parsed.groupByField ? parsed.groupByField : 'tag',
+    };
   } catch (e) {
     console.warn('[Component Table] could not read saved state, using defaults', e);
     return defaultState();
@@ -166,13 +173,13 @@ function loadState() {
 
 function saveState() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ columns, filters, groupByDefinition }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ columns, filters, groupByDefinition, groupByField }));
   } catch (e) {
     console.warn('[Component Table] could not save state', e);
   }
 }
 
-let { columns, filters, groupByDefinition } = loadState();
+let { columns, filters, groupByDefinition, groupByField } = loadState();
 // Grows over the session as collectComponents discovers Advanced
 // Attributes actually present in the model. Seeded with the always-
 // available built-ins so every picker has options even before the first
@@ -182,7 +189,7 @@ let allComponents = [];
 let lastTruncated = false;
 
 // Cells the user has clicked to expand a "Mixed (N)" summary into its full
-// value list (user story 23). Keyed `${tagLabel}::${fieldId}`, session-only
+// value list (user story 23). Keyed `${groupLabel}::${fieldId}`, session-only
 // — not persisted, since it's a transient reading aid, not a preference.
 const expandedCells = new Set();
 
@@ -257,6 +264,7 @@ function updateFieldOptions(discoveredFields) {
   knownFields.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
   renderColumnsBar();
   renderFilters();
+  renderGroupByFieldSelect();
 }
 
 // ─── Columns bar ────────────────────────────────────────────────────────
@@ -321,7 +329,9 @@ function renderColumnsBar() {
     list.appendChild(chip);
   });
 
-  const availableFields = knownFields.filter((f) => f.id !== 'tag' && !columns.includes(f.id));
+  // Tag is a normal column choice as of US-210 — no field is excluded here
+  // just for being the group-by key.
+  const availableFields = knownFields.filter((f) => !columns.includes(f.id));
   const select = el('add-column-select');
   select.dataset.placeholder = '+ Add column…';
   populateFieldSelect(select, availableFields, '');
@@ -335,7 +345,10 @@ el('add-column-select').addEventListener('change', (e) => {
 // ─── Filters ────────────────────────────────────────────────────────────
 
 function addFilter() {
-  filters.push({ id: makeId('filter'), field: 'tag', matchType: 'contains', text: '' });
+  // No field is privileged as of US-210 — default to the first available
+  // field, same as any other picker would.
+  const defaultField = knownFields[0]?.id ?? '';
+  filters.push({ id: makeId('filter'), field: defaultField, matchType: 'contains', text: '' });
   saveState();
   renderFilters();
   renderTable();
@@ -442,7 +455,28 @@ function matchTypeLabel(matchType) {
 el('add-filter-btn').addEventListener('click', addFilter);
 el('clear-filters-btn').addEventListener('click', clearFilters);
 
-// ─── Grouping mode (US-203) ─────────────────────────────────────────────
+// ─── Grouping mode (US-203/US-210/US-211) ────────────────────────────────
+
+// Updates the second-level toggle's label to name the CURRENT primary
+// group-by field (e.g. "Material → Definition Name") rather than a
+// hardcoded "Tag →..." — the second level itself stays fixed to Definition
+// Name (see logic.js's groupComponentsByField), only the label text follows
+// the primary field selection.
+function updateGroupByDefinitionLabel() {
+  el('group-by-definition-label').textContent = `${fieldLabel(groupByField)} → Definition Name`;
+}
+
+function renderGroupByFieldSelect() {
+  const select = el('group-by-field-select');
+  populateFieldSelect(select, knownFields, groupByField);
+}
+
+el('group-by-field-select').addEventListener('change', (e) => {
+  groupByField = e.target.value;
+  saveState();
+  updateGroupByDefinitionLabel();
+  renderTable();
+});
 
 el('group-by-definition-toggle').checked = groupByDefinition;
 el('group-by-definition-toggle').addEventListener('change', (e) => {
@@ -455,8 +489,8 @@ el('group-by-definition-toggle').addEventListener('change', (e) => {
 
 // Renders one aggregated-column cell into `row`, wiring up the Mixed (N)
 // expand-on-click behavior keyed by `cellKey`. Shared between the flat
-// (Tag only) and two-level (Tag → Definition Name) render paths below so
-// the expand behavior works identically at either grouping depth.
+// (single-field) and two-level (<field> → Definition Name) render paths
+// below so the expand behavior works identically at either grouping depth.
 function appendAggregatedCells(row, groupComponents, numericByColumn, cellKeyPrefix) {
   for (const fieldId of columns) {
     const summary = aggregateColumn(groupComponents, fieldId, numericByColumn.get(fieldId));
@@ -479,7 +513,8 @@ function appendAggregatedCells(row, groupComponents, numericByColumn, cellKeyPre
 
 function renderTable() {
   const filtered = filterComponents(allComponents, filters.filter((f) => f.text.trim() !== ''));
-  const groups = groupComponentsByTag(filtered, { byDefinition: groupByDefinition });
+  const groups = groupComponentsByField(filtered, groupByField, { byDefinition: groupByDefinition });
+  const blankLabel = blankBucketLabel(groupByField);
 
   const wrapper = el('table-wrapper');
   const table = el('component-table');
@@ -497,14 +532,15 @@ function renderTable() {
   emptyState.hidden = true;
 
   // Numeric-vs-text is decided once per column across the whole filtered
-  // set (not per tag group, and not per definition sub-group either), so a
+  // set (not per group, and not per definition sub-group either), so a
   // column can't flip type row to row — see logic.js isFieldNumeric.
   const numericByColumn = new Map(columns.map((fieldId) => [fieldId, isFieldNumeric(filtered, fieldId)]));
 
+  const groupFieldHeaderLabel = fieldLabel(groupByField);
   const thead = el('component-table-head');
   thead.innerHTML = '';
   const headRow = document.createElement('tr');
-  headRow.appendChild(th('Tag'));
+  headRow.appendChild(th(groupFieldHeaderLabel));
   if (groupByDefinition) headRow.appendChild(th('Definition Name'));
   headRow.appendChild(th('Count'));
   for (const fieldId of columns) headRow.appendChild(th(fieldLabel(fieldId)));
@@ -516,34 +552,34 @@ function renderTable() {
   for (const group of groups) {
     if (!groupByDefinition) {
       const row = document.createElement('tr');
-      if (group.tagLabel === UNTAGGED_LABEL) row.classList.add('untagged-row');
+      if (group.groupLabel === blankLabel) row.classList.add('blank-row');
       row.classList.add('component-row');
       row.title = 'Click to select these components in the model';
       row.addEventListener('click', () => selectRowInModel(group.components));
 
-      row.appendChild(td(group.tagLabel));
+      row.appendChild(td(group.groupLabel));
       row.appendChild(td(String(group.components.length), 'count-cell'));
-      appendAggregatedCells(row, group.components, numericByColumn, group.tagLabel);
+      appendAggregatedCells(row, group.components, numericByColumn, group.groupLabel);
       tbody.appendChild(row);
       continue;
     }
 
-    // Tag → Definition Name: one row per definition sub-group, with the
-    // tag label shown once (on the first sub-row) rather than repeated —
-    // the sub-rows are still visually grouped under it via the shared
-    // .untagged-row styling and row order.
+    // <group field> → Definition Name: one row per definition sub-group,
+    // with the primary group label shown once (on the first sub-row)
+    // rather than repeated — the sub-rows are still visually grouped under
+    // it via the shared .blank-row styling and row order.
     group.subgroups.forEach((sub, subIndex) => {
       subgroupCount += 1;
       const row = document.createElement('tr');
       row.classList.add('definition-subrow', 'component-row');
-      if (group.tagLabel === UNTAGGED_LABEL) row.classList.add('untagged-row');
+      if (group.groupLabel === blankLabel) row.classList.add('blank-row');
       row.title = 'Click to select these components in the model';
       row.addEventListener('click', () => selectRowInModel(sub.components));
 
-      row.appendChild(td(subIndex === 0 ? group.tagLabel : ''));
+      row.appendChild(td(subIndex === 0 ? group.groupLabel : ''));
       row.appendChild(td(sub.definitionLabel));
       row.appendChild(td(String(sub.components.length), 'count-cell'));
-      appendAggregatedCells(row, sub.components, numericByColumn, `${group.tagLabel}::${sub.definitionLabel}`);
+      appendAggregatedCells(row, sub.components, numericByColumn, `${group.groupLabel}::${sub.definitionLabel}`);
       tbody.appendChild(row);
     });
   }
@@ -554,17 +590,17 @@ function renderTable() {
     : '';
   el('footer-summary').textContent =
     `${filtered.length} of ${allComponents.length} component${allComponents.length === 1 ? '' : 's'} · ` +
-    `${groups.length} tag group${groups.length === 1 ? '' : 's'}${groupingNote}${truncatedNote}`;
+    `${groups.length} ${groupFieldHeaderLabel} group${groups.length === 1 ? '' : 's'}${groupingNote}${truncatedNote}`;
 }
 
 // Click-to-select (US-204): selects the JSA entities behind a clicked row's
 // components, replacing whatever is currently selected in the model — same
 // "replace" semantics as clicking an entity directly in the SketchUp
-// viewport, not an additive multi-row selection. A tag-group summary row
-// selects every component instance in that group (and, when Tag →
-// Definition Name grouping is on, a definition sub-row selects just that
-// sub-group's instances) since `group.components`/`sub.components` already
-// holds exactly the right instance set either way.
+// viewport, not an additive multi-row selection. A group summary row
+// selects every component instance in that group (and, when the second
+// "→ Definition Name" grouping level is on, a definition sub-row selects
+// just that sub-group's instances) since `group.components`/
+// `sub.components` already holds exactly the right instance set either way.
 function selectRowInModel(rowComponents) {
   if (!model) return;
   const entities = getSelectionEntities(rowComponents);
@@ -695,6 +731,8 @@ el('truncated-banner-close').addEventListener('click', clearTruncated);
 
 renderColumnsBar();
 renderFilters();
+renderGroupByFieldSelect();
+updateGroupByDefinitionLabel();
 
 async function init() {
   try {

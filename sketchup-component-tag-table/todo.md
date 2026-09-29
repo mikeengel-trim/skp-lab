@@ -181,14 +181,16 @@ Sample prompt to kickoff work by claude based on the Todo.md
 **Depends on / pairs with [[US-211]]** (generic grouping) — this story removes Tag's special-cased structural role; US-211 provides the generic replacement mechanism grouping falls back to.
 
 #### Acceptance Criteria
-- [ ] **Column Picker:** Remove the `tag` exclusion from `availableFields` in `app.js` so "Tag" appears as a normal selectable/deselectable column, exactly like any built-in or Advanced Attribute field.
-- [ ] **Filters:** Remove the default-to-`tag` behavior in `addFilter()`; a new filter row's default field is chosen the same way it would be for any other field (e.g. first available field), with no field privileged.
-- [ ] **No Fixed Group-By:** `groupComponentsByTag` no longer runs unconditionally in the render pipeline; when no grouping is configured, the table renders a flat, ungrouped list of components (or the field-agnostic grouping from [[US-211]] applies, if that has landed).
-- [ ] **UI Strings:** Replace hardcoded `"Tag"` header text and `"tag group"` status string in `app.js` with labels derived from the active grouping/column configuration (e.g. the grouped field's `label` from `knownFields`), so no UI text assumes Tag specifically.
-- [ ] **Untagged Semantics Generalized:** The `UNTAGGED_LABEL`/"Untagged" empty-value handling becomes a generic "(blank)"-style fallback usable for any field's grouping, not a Tag-specific constant, while preserving existing behavior when Tag is the field being grouped.
-- [ ] **No Regressions:** Existing Tag-based filtering, column display, and (if landed) US-203/US-211 grouping behavior continue to work when a user explicitly chooses to filter/group by Tag — this story removes special-casing, not the ability to use Tag itself.
-- [ ] **Test Coverage:** `verify/verify.mjs` and `verify/verify-dom.mjs` are updated to assert Tag has no special structural treatment (e.g. a test that groups/filters by a non-Tag field with no Tag column present at all).
-- [ ] **Test Pipeline:** `npm test` inside `/verify` passes with 0 failures.
+- [x] **Column Picker:** Remove the `tag` exclusion from `availableFields` in `app.js` so "Tag" appears as a normal selectable/deselectable column, exactly like any built-in or Advanced Attribute field.
+- [x] **Filters:** Remove the default-to-`tag` behavior in `addFilter()`; a new filter row's default field is chosen the same way it would be for any other field (e.g. first available field), with no field privileged.
+- [x] **No Fixed Group-By:** `groupComponentsByTag` no longer runs unconditionally in the render pipeline; when no grouping is configured, the table renders a flat, ungrouped list of components (or the field-agnostic grouping from [[US-211]] applies, if that has landed).
+  - Landed together with US-211 per this criterion's own parenthetical: `groupComponentsByTag` is gone, replaced by field-agnostic `groupComponentsByField(components, groupByField, ...)`, driven by a new "Group by" picker that defaults to `tag` for continuity. There's always an active group-by field (not a separate "no grouping" mode) — decided this way because a genuinely flat/ungrouped table is a different UI shape (no group header/count column at all) that neither story asked for; "no field is fixed/hardcoded" was the actual requirement, and that holds.
+- [x] **UI Strings:** Replace hardcoded `"Tag"` header text and `"tag group"` status string in `app.js` with labels derived from the active grouping/column configuration (e.g. the grouped field's `label` from `knownFields`), so no UI text assumes Tag specifically.
+- [x] **Untagged Semantics Generalized:** The `UNTAGGED_LABEL`/"Untagged" empty-value handling becomes a generic "(blank)"-style fallback usable for any field's grouping, not a Tag-specific constant, while preserving existing behavior when Tag is the field being grouped.
+  - `logic.js`'s `blankBucketLabel(fieldId)` returns `UNTAGGED_LABEL` ("Untagged") only for `fieldId === 'tag'`, and the generic `BLANK_LABEL` ("(blank)") for every other field — preserves existing wording/behavior for Tag exactly, per the criterion's own carve-out.
+- [x] **No Regressions:** Existing Tag-based filtering, column display, and (if landed) US-203/US-211 grouping behavior continue to work when a user explicitly chooses to filter/group by Tag — this story removes special-casing, not the ability to use Tag itself.
+- [x] **Test Coverage:** `verify/verify.mjs` and `verify/verify-dom.mjs` are updated to assert Tag has no special structural treatment (e.g. a test that groups/filters by a non-Tag field with no Tag column present at all).
+- [x] **Test Pipeline:** `npm test` inside `/verify` passes with 0 failures.
 
 ### [US-211] Generic Attribute-Based Grouping (Any Field, Not Just Tag)
 
@@ -200,15 +202,20 @@ Sample prompt to kickoff work by claude based on the Todo.md
 
 **Open Design Questions (resolve before/while implementing, do not silently guess):**
 - **Multi-value / list-like attribute values:** Tag grouping assumes one scalar tag per component. Decide how grouping behaves for a field whose value could reasonably be considered multi-valued or highly variable (e.g. free-text Advanced Attributes) — group by exact string value, same as today's Tag equality bucketing, or something else. Document the choice.
+  - **Resolved:** exact string value, same as Tag always did (`String(getFieldValue(...))` as the bucket key) — no new tokenizing/splitting behavior. See `README.md`'s PRD decisions table.
 - **Empty/missing value bucket:** Generalize the "Untagged" fallback (see [[US-210]]) to a field-agnostic "(blank)" bucket for any grouped field, and decide the bucket's sort position (Tag grouping today forces Untagged last).
+  - **Resolved:** `blankBucketLabel(fieldId)` in `logic.js` — `UNTAGGED_LABEL` for Tag, generic `BLANK_LABEL` otherwise; always sorts last, same position Untagged already had.
 - **Numeric fields:** Decide whether grouping by a numeric field (e.g. a future numeric built-in from US-206) buckets by exact value or is disallowed/discouraged in the UI, since numeric fields are more naturally aggregated (summed) than grouped.
+  - **Resolved:** allowed, bucketed by exact value — not disallowed in the UI. See `README.md`'s PRD decisions table for why (an arbitrary restriction the mechanism doesn't actually need).
 - **Relationship to two-level grouping (US-203):** US-203 adds an optional second level (Tag → Definition Name) on top of the *existing* Tag-first grouping. Decide how that story's toggle composes once grouping is generic — e.g. does "second-level grouping" become "any field → any field," or does it stay a fixed second dimension layered on top of whatever the user picks as the primary group-by field. Document the decision so US-203 and this story don't conflict if both land.
+  - **Resolved:** the second level stays fixed to Definition Name, layered on top of whichever field is chosen as primary — "any field → any field" would be a materially bigger feature (its own field picker, blank-bucket/sort rules) deliberately left for a future story rather than scope-creeping this one. See `README.md`'s PRD decisions table.
 
 #### Acceptance Criteria
-- [ ] **Group-By Control:** Add a UI control (near the existing column picker/filter controls) letting the user choose the field to group rows by, populated from the same `knownFields` registry and `populateFieldSelect` pattern the filter UI already uses.
-- [ ] **Generic Grouping Logic:** Add `groupComponentsByField(components, fieldId)` in `logic.js` that buckets components by `getFieldValue(component, fieldId)`, replacing the Tag-specific `groupComponentsByTag` call in the render pipeline (`app.js`), per the Open Design Questions above for blanks/sort order/numeric fields.
-- [ ] **Works for Any Field Type:** Grouping works identically for built-in fields and Advanced Attribute fields (`attribute::dict::key` ids), with no special-casing beyond what's documented for numeric fields.
-- [ ] **Persistence:** The chosen group-by field persists the same way column selection does (`localStorage`, per `README.md`'s existing persistence precedent), and is included in named saved configurations if [[US-207]]/[[US-208]] have landed.
-- [ ] **UI Labels Follow Selection:** The group header column and any group-count status text reflect the selected field's `label` (from `knownFields`), not a hardcoded "Tag" string (coordinate with [[US-210]] so these aren't duplicated).
-- [ ] **Test Coverage:** `verify/verify.mjs` includes assertions for `groupComponentsByField` grouping by a non-Tag built-in field and by an Advanced Attribute field, including the blank-value bucket case.
-- [ ] **Test Pipeline:** `npm test` inside `/verify` passes with 0 failures.
+- [x] **Group-By Control:** Add a UI control (near the existing column picker/filter controls) letting the user choose the field to group rows by, populated from the same `knownFields` registry and `populateFieldSelect` pattern the filter UI already uses.
+- [x] **Generic Grouping Logic:** Add `groupComponentsByField(components, fieldId)` in `logic.js` that buckets components by `getFieldValue(component, fieldId)`, replacing the Tag-specific `groupComponentsByTag` call in the render pipeline (`app.js`), per the Open Design Questions above for blanks/sort order/numeric fields.
+- [x] **Works for Any Field Type:** Grouping works identically for built-in fields and Advanced Attribute fields (`attribute::dict::key` ids), with no special-casing beyond what's documented for numeric fields.
+- [x] **Persistence:** The chosen group-by field persists the same way column selection does (`localStorage`, per `README.md`'s existing persistence precedent), and is included in named saved configurations if [[US-207]]/[[US-208]] have landed.
+  - US-207/US-208 haven't landed yet; `groupByField` persists under the existing single `STORAGE_KEY` alongside `columns`/`filters`/`groupByDefinition` for now.
+- [x] **UI Labels Follow Selection:** The group header column and any group-count status text reflect the selected field's `label` (from `knownFields`), not a hardcoded "Tag" string (coordinate with [[US-210]] so these aren't duplicated).
+- [x] **Test Coverage:** `verify/verify.mjs` includes assertions for `groupComponentsByField` grouping by a non-Tag built-in field and by an Advanced Attribute field, including the blank-value bucket case.
+- [x] **Test Pipeline:** `npm test` inside `/verify` passes with 0 failures.
