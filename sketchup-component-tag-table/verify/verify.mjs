@@ -17,6 +17,7 @@ import {
   componentMatchesFilters,
   filterComponents,
   groupComponentsByTag,
+  getSelectionEntities,
   isNumericValue,
   isFieldNumeric,
   aggregateColumn,
@@ -182,6 +183,29 @@ test('componentMatchesFilters: OR within a field, AND across fields', () => {
 test('filterComponents returns everything unchanged when there are no active filters', () => {
   const components = [sampleComponent, { ...sampleComponent, tag: 'Windows' }];
   assert.equal(filterComponents(components, []).length, 2);
+});
+
+// ─── Row-to-model selection (US-204) ─────────────────────────────────────
+
+test('getSelectionEntities extracts each component\'s instanceRef', () => {
+  const components = [
+    { ...sampleComponent, instanceRef: { id: 'a' } },
+    { ...sampleComponent, instanceRef: { id: 'b' } },
+  ];
+  assert.deepEqual(getSelectionEntities(components), [{ id: 'a' }, { id: 'b' }]);
+});
+
+test('getSelectionEntities drops components with no instanceRef rather than passing null/undefined through', () => {
+  const components = [
+    { ...sampleComponent, instanceRef: { id: 'a' } },
+    { ...sampleComponent, instanceRef: null },
+    { ...sampleComponent }, // no instanceRef key at all
+  ];
+  assert.deepEqual(getSelectionEntities(components), [{ id: 'a' }]);
+});
+
+test('getSelectionEntities returns an empty array for an empty component list', () => {
+  assert.deepEqual(getSelectionEntities([]), []);
 });
 
 // ─── Grouping by tag ─────────────────────────────────────────────────────

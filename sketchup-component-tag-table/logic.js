@@ -192,6 +192,19 @@ export function groupComponentsByTag(components) {
   return entries;
 }
 
+// ─── Row-to-model selection (US-204) ─────────────────────────────────────
+
+// Extracts the underlying JSA entity references for a table row's
+// components, so a click handler can hand them straight to
+// `model.updateSelection(entities, 'set')`. A component record only carries
+// an `instanceRef` when it was built from a live model walk (app.js's
+// `buildComponentRecord`); records built purely for tests or column/filter
+// preview purposes may not have one, so a missing ref is silently dropped
+// rather than passed to the Selection API as `undefined`.
+export function getSelectionEntities(components) {
+  return components.map((c) => c.instanceRef).filter((ref) => ref != null);
+}
+
 // ─── Column aggregation ─────────────────────────────────────────────────
 
 // A raw value counts as numeric if, trimmed, it parses as a finite number.

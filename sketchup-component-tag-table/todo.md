@@ -62,11 +62,11 @@ Sample prompt to kickoff work by claude based on the Todo.md
 **Note:** This was explicitly out of scope for v1 ("Row-to-model selection (story 25) — Out of scope for v1", per `README.md`'s PRD decisions table) and the extension is currently read-only with zero `operation.*`/`op.*` calls. Selecting entities is a `Selection` API call, not an `operation.*` mutation, so this can be added without breaking the "read-only, no model mutation" guarantee — but that distinction should be called out explicitly in `README.md` when this ships, since the README currently states there is no such call anywhere in the extension.
 
 #### Acceptance Criteria
-- [ ] **Click-to-Select:** Clicking a table row selects the corresponding component instance(s) in the active SketchUp model (via the JSA `Selection` API), replacing the current selection.
-- [ ] **Scope Clarity:** Clicking a tag-group summary row (vs. an individual component row, if the table distinguishes them) selects all component instances in that group.
-- [ ] **No Mutation:** Confirm and document that this feature uses only selection APIs, not `operation.*`/`op.*` calls — update the "Read-only" claim in `README.md`'s intro to scope it accurately (e.g. "no model *mutation*" rather than implying selection is also excluded).
-- [ ] **Test Coverage:** `verify/verify-dom.mjs` includes a test simulating a row click and asserting the expected selection call/arguments (mocking the JSA `Selection` API as needed).
-- [ ] **Test Pipeline:** `npm test` inside `/verify` passes with 0 failures.
+- [x] **Click-to-Select:** Clicking a table row selects the corresponding component instance(s) in the active SketchUp model (via the JSA `Selection` API), replacing the current selection.
+- [x] **Scope Clarity:** Clicking a tag-group summary row (vs. an individual component row, if the table distinguishes them) selects all component instances in that group.
+- [x] **No Mutation:** Confirm and document that this feature uses only selection APIs, not `operation.*`/`op.*` calls — update the "Read-only" claim in `README.md`'s intro to scope it accurately (e.g. "no model *mutation*" rather than implying selection is also excluded).
+- [x] **Test Coverage:** `verify/verify-dom.mjs` includes a test simulating a row click and asserting the expected selection call/arguments (mocking the JSA `Selection` API as needed).
+- [x] **Test Pipeline:** `npm test` inside `/verify` passes with 0 failures.
 
 ### [US-205] Expand DOM/Integration Test Coverage in `verify-dom.mjs`
 * **As a** Developer

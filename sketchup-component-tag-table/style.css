@@ -137,6 +137,8 @@ thead th {
 tbody td { padding: 7px 10px; border-bottom: 1px solid #eee; vertical-align: top; }
 tbody tr:hover { background: #fafcff; }
 tbody tr.untagged-row td:first-child { font-style: italic; color: #666; }
+tbody tr.component-row { cursor: pointer; }
+tbody tr.component-row:hover { background: #eaf2ff; }
 
 .count-cell { font-variant-numeric: tabular-nums; text-align: right; width: 60px; }
 

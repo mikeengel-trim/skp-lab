@@ -77,5 +77,109 @@ if (/liveModelHandle\s*\?\.\s*end\s*\?\.\s*\(/.test(appJs) || /liveModelHandle\.
 if (appJs.includes('liveModelHandle?.stop?.()')) pass++;
 else { fail++; console.error('FAIL expected liveModelHandle to be stopped via .stop() somewhere in app.js'); }
 
+// ─── Execution test: click-to-select (US-204) ────────────────────────────
+//
+// Unlike everything above (which never executes app.js — sibling
+// extensions in this repo can't, since WebGL/Three.js genuinely don't run
+// in jsdom), the Selection API is trivially mockable, so it's worth
+// actually running app.js here and simulating a real row click rather than
+// only checking for the right strings. Sets up the handful of bare globals
+// app.js touches (document/window/localStorage/SketchUpApi/Option) before
+// dynamically importing the real shipped module, then waits for its
+// (unawaited) init() to finish its mocked model walk and initial render.
+
+// Named exactly `ComponentInstance` (not e.g. MockComponentInstance) since
+// app.js's model walk dispatches on `child?.constructor?.name`, matching
+// the real JSA SDK's class name.
+class ComponentInstance {
+  constructor({ id, tagId = null }) {
+    this.id = id;
+    this.tagId = tagId;
+    this.materialId = null;
+    this.name = null;
+    this.guid = id;
+    this.description = null;
+    this.definition = null;
+    this.attributes = { allDictionaries: [] };
+  }
+}
+
+const doorA = new ComponentInstance({ id: 'door-a', tagId: 1 });
+const doorB = new ComponentInstance({ id: 'door-b', tagId: 1 });
+const windowA = new ComponentInstance({ id: 'window-a', tagId: 2 });
+
+const selectionCalls = [];
+let mockModel;
+mockModel = {
+  getTagManager: async () => ({ tags: [{ id: 1, name: 'Doors' }, { id: 2, name: 'Windows' }] }),
+  getMaterials: async () => ({ findMaterialById: () => null }),
+  findEntity: async () => null,
+  refresh: async () => mockModel,
+  entities: { get: async () => [doorA, doorB, windowA] },
+  updateSelection: async (entities, mode) => { selectionCalls.push({ entities: [...entities], mode }); },
+};
+
+const execDom = new JSDOM(html, { url: 'http://localhost/' });
+globalThis.document = execDom.window.document;
+globalThis.window = execDom.window;
+globalThis.Option = execDom.window.Option;
+const localStorageData = {};
+globalThis.localStorage = {
+  getItem: (k) => (k in localStorageData ? localStorageData[k] : null),
+  setItem: (k, v) => { localStorageData[k] = v; },
+};
+globalThis.SketchUpApi = {
+  connect: async () => {},
+  disconnect: () => {},
+  getActiveModel: async () => mockModel,
+  observeActiveModel: () => ({ stop: () => {} }),
+};
+
+async function waitFor(predicate, { timeout = 2000, interval = 5 } = {}) {
+  const start = Date.now();
+  while (!predicate()) {
+    if (Date.now() - start > timeout) throw new Error('waitFor: timed out');
+    await new Promise((resolve) => setTimeout(resolve, interval));
+  }
+}
+
+try {
+  await import(path.resolve(__dirname, '../app.js'));
+  await waitFor(() => execDom.window.document.getElementById('component-table-body').children.length > 0);
+
+  const rows = [...execDom.window.document.querySelectorAll('#component-table-body tr.component-row')];
+  const doorsRow = rows.find((r) => r.firstChild.textContent === 'Doors');
+  const windowsRow = rows.find((r) => r.firstChild.textContent === 'Windows');
+
+  if (doorsRow && windowsRow) {
+    pass++;
+
+    doorsRow.dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+    const firstCall = selectionCalls[selectionCalls.length - 1];
+    if (firstCall && firstCall.mode === 'set' && firstCall.entities.length === 2 &&
+        firstCall.entities.includes(doorA) && firstCall.entities.includes(doorB)) {
+      pass++;
+    } else {
+      fail++;
+      console.error('FAIL clicking the "Doors" row did not call model.updateSelection([doorA, doorB], \'set\')', firstCall);
+    }
+
+    windowsRow.dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+    const secondCall = selectionCalls[selectionCalls.length - 1];
+    if (secondCall && secondCall.mode === 'set' && secondCall.entities.length === 1 && secondCall.entities[0] === windowA) {
+      pass++;
+    } else {
+      fail++;
+      console.error('FAIL clicking the "Windows" row did not call model.updateSelection([windowA], \'set\')', secondCall);
+    }
+  } else {
+    fail += 3;
+    console.error('FAIL expected rendered "Doors" and "Windows" rows with class .component-row, found none');
+  }
+} catch (e) {
+  fail += 3;
+  console.error('FAIL click-to-select execution test threw', e);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail > 0 ? 1 : 0);
