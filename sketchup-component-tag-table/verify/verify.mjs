@@ -29,6 +29,11 @@ import {
   MIXED_VALUE_THRESHOLD,
   sortSavedConfigs,
   pruneMissingFields,
+  FormulaError,
+  parseFormula,
+  evaluateFormula,
+  extractFormulaFieldRefs,
+  wouldCreateCircularReference,
 } from '../logic.js';
 
 let pass = 0, fail = 0;
@@ -538,6 +543,108 @@ test('pruneMissingFields keeps a known groupByField unchanged and does not mutat
   assert.equal(pruned.groupByField, 'material');
   assert.equal(pruned.groupByDefinition, true);
   assert.deepEqual(config.columns, ['material']); // original untouched
+});
+
+// ─── Calculated columns (US-209) ───────────────────────────────────────────
+
+test('parseFormula/evaluateFormula: basic arithmetic with field references', () => {
+  const ast = parseFormula('{Cost} * {Quantity}');
+  const result = evaluateFormula(ast, (label) => ({ Cost: 12.5, Quantity: 4 })[label]);
+  assert.equal(result, 50);
+});
+
+test('parseFormula/evaluateFormula: operator precedence and parentheses', () => {
+  assert.equal(evaluateFormula(parseFormula('2 + 3 * 4'), () => null), 14);
+  assert.equal(evaluateFormula(parseFormula('(2 + 3) * 4'), () => null), 20);
+  assert.equal(evaluateFormula(parseFormula('-5 + 2'), () => null), -3);
+});
+
+test('parseFormula/evaluateFormula: comparisons, including string equality', () => {
+  assert.equal(evaluateFormula(parseFormula('{Tag} == "Doors"'), (l) => ({ Tag: 'Doors' }[l])), true);
+  assert.equal(evaluateFormula(parseFormula('{Tag} == "Doors"'), (l) => ({ Tag: 'Windows' }[l])), false);
+  assert.equal(evaluateFormula(parseFormula('{Cost} > 100'), (l) => ({ Cost: 150 }[l])), true);
+  assert.equal(evaluateFormula(parseFormula('{Cost} <= 100'), (l) => ({ Cost: 150 }[l])), false);
+});
+
+test('parseFormula rejects invalid syntax (so the UI can flag it before adding the column)', () => {
+  assert.throws(() => parseFormula('{Cost} *'), FormulaError);
+  assert.throws(() => parseFormula('{Cost'), FormulaError); // unterminated field reference
+  assert.throws(() => parseFormula('1 + + 2'), FormulaError);
+  assert.throws(() => parseFormula(''), FormulaError);
+  assert.throws(() => parseFormula('{Cost} $ 2'), FormulaError); // unknown character
+});
+
+test('evaluateFormula throws FormulaError for a missing field reference', () => {
+  assert.throws(() => evaluateFormula(parseFormula('{Cost} * 2'), () => null), FormulaError);
+});
+
+test('evaluateFormula throws FormulaError for division by zero', () => {
+  assert.throws(() => evaluateFormula(parseFormula('{Cost} / {Quantity}'), (l) => ({ Cost: 10, Quantity: 0 }[l])), FormulaError);
+});
+
+test('evaluateFormula throws FormulaError for a non-numeric operand in arithmetic', () => {
+  assert.throws(() => evaluateFormula(parseFormula('{Tag} * 2'), (l) => ({ Tag: 'Doors' }[l])), FormulaError);
+});
+
+test('extractFormulaFieldRefs lists every distinct {Label} referenced, in order, once each', () => {
+  const ast = parseFormula('{A} + {B} * {A} - {C}');
+  assert.deepEqual(extractFormulaFieldRefs(ast), ['A', 'B', 'C']);
+});
+
+test('wouldCreateCircularReference: detects a direct self-reference', () => {
+  assert.equal(wouldCreateCircularReference('Total', ['Total'], []), true);
+});
+
+test('wouldCreateCircularReference: detects a transitive cycle (A -> B -> A)', () => {
+  const existing = [{ name: 'B', formula: '{A} * 2' }];
+  assert.equal(wouldCreateCircularReference('A', ['B'], existing), true);
+});
+
+test('wouldCreateCircularReference: a non-circular chain (A -> B -> C) is allowed', () => {
+  const existing = [{ name: 'B', formula: '{C} * 2' }, { name: 'C', formula: '5' }];
+  assert.equal(wouldCreateCircularReference('A', ['B'], existing), false);
+});
+
+test('getFieldValue evaluates a calculated column referencing a built-in and an Advanced Attribute field', () => {
+  const costId = encodeAttributeFieldId('IFC', 'Cost');
+  const component = { ...sampleComponent, attributes: { IFC: { Cost: '10' } } };
+  const context = {
+    calculatedColumns: new Map([['calc::total', { name: 'Total', ast: parseFormula('{Cost} * 3') }]]),
+    fieldIdByLabel: new Map([['Cost', costId]]),
+  };
+  assert.equal(getFieldValue(component, 'calc::total', context), 30);
+});
+
+test('getFieldValue returns a per-component error marker instead of throwing (US-209 error handling)', () => {
+  const context = {
+    calculatedColumns: new Map([['calc::bad', { name: 'Bad', ast: parseFormula('{Missing} * 2') }]]),
+    fieldIdByLabel: new Map(), // 'Missing' is not in the label map at all
+  };
+  const result = getFieldValue(sampleComponent, 'calc::bad', context);
+  assert.equal(typeof result, 'string');
+  assert.ok(result.startsWith('#ERROR'));
+});
+
+test('getFieldValue detects a runtime circular reference between two calculated columns without infinite-looping', () => {
+  const context = {
+    calculatedColumns: new Map([
+      ['calc::a', { name: 'A', ast: parseFormula('{B} + 1') }],
+      ['calc::b', { name: 'B', ast: parseFormula('{A} + 1') }],
+    ]),
+    fieldIdByLabel: new Map([['A', 'calc::a'], ['B', 'calc::b']]),
+  };
+  const result = getFieldValue(sampleComponent, 'calc::a', context);
+  assert.equal(typeof result, 'string');
+  assert.ok(result.startsWith('#ERROR'));
+});
+
+test('aggregateColumn sums a calculated column across a tag group', () => {
+  const context = {
+    calculatedColumns: new Map([['calc::total', { name: 'Total', ast: parseFormula('{Cost} * 2') }]]),
+    fieldIdByLabel: new Map([['Cost', 'material']]), // reuse 'material' as a stand-in numeric-ish field for this test
+  };
+  const components = [{ material: '10' }, { material: '5' }];
+  assert.deepEqual(aggregateColumn(components, 'calc::total', true, context), { type: 'sum', value: 30 });
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

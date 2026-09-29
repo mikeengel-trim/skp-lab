@@ -599,6 +599,176 @@ try {
     fail++;
     console.error('FAIL empty-state (saved configs) execution test threw', e);
   }
+
+  // ─── Calculated columns execution tests (US-209) ─────────────────────────
+
+  function fillCalculatedColumnForm(name, formula) {
+    const nameInput = doc.querySelector('#calculated-column-inline input');
+    const formulaInput = doc.querySelector('#calculated-column-inline .calculated-column-formula-input');
+    nameInput.value = name;
+    formulaInput.value = formula;
+  }
+  function clickCalculatedColumnButton(label) {
+    [...doc.querySelectorAll('#calculated-column-inline button')].find((b) => b.textContent === label)
+      ?.dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+  }
+  function calculatedColumnChipLabels() {
+    return [...doc.querySelectorAll('#calculated-columns-list .chip-label')].map((l) => l.textContent);
+  }
+
+  // Add a calculated column, add it as a column, and confirm it sums
+  // correctly through the SAME getFieldValue seam every other field uses
+  // (US-209's "Integrates with Existing Pipeline" requirement). Uses a
+  // constant expression (no field reference) rather than e.g. Size ->
+  // Width specifically, since that field is deliberately sparse across
+  // these mocks (windowA/fixtures have none, by design, for the US-206
+  // "missing geometry renders '—'" test above) — referencing it here would
+  // make the whole calculated column non-numeric for a different, already
+  // well-covered reason (a formula's missing-field reference is a per-
+  // component ERROR by design, not a skipped null — see the pure-logic
+  // tests in verify.mjs for that specific field-reference behavior).
+  try {
+    doc.getElementById('add-calculated-column-btn').dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+    fillCalculatedColumnForm('Constant Twelve', '10 + 2');
+    clickCalculatedColumnButton('Add');
+
+    if (calculatedColumnChipLabels().includes('Constant Twelve')) pass++;
+    else { fail++; console.error('FAIL expected "Constant Twelve" chip after adding a calculated column', calculatedColumnChipLabels()); }
+
+    const addColumnSelect = doc.getElementById('add-column-select');
+    const hasCalcOption = [...addColumnSelect.querySelectorAll('option')].some((o) => o.textContent === 'Constant Twelve');
+    if (hasCalcOption) pass++;
+    else { fail++; console.error('FAIL expected "Constant Twelve" to be a selectable column option'); }
+
+    addColumnSelect.value = [...addColumnSelect.options].find((o) => o.textContent === 'Constant Twelve').value;
+    addColumnSelect.dispatchEvent(new execDom.window.Event('change', { bubbles: true }));
+
+    const doorsRowNow = [...doc.querySelectorAll('#component-table-body tr.component-row')].find((r) => r.firstChild.textContent === 'Doors');
+    const cells = [...doorsRowNow.querySelectorAll('td')].map((td) => td.textContent);
+    if (cells.includes('24')) pass++; // 2 doors x 12 each
+    else { fail++; console.error(`FAIL expected the Doors row's "Constant Twelve" column to sum to 24, got: ${JSON.stringify(cells)}`); }
+  } catch (e) {
+    fail += 3;
+    console.error('FAIL calculated column add/aggregate execution test threw', e);
+  }
+
+  // A formula referencing a field with no value for a component renders a
+  // clear per-cell error rather than crashing (US-209 Error Handling).
+  try {
+    doc.getElementById('add-calculated-column-btn').dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+    fillCalculatedColumnForm('Bad Ref', '{Nonexistent Field} * 2');
+    clickCalculatedColumnButton('Add');
+
+    const addColumnSelect = doc.getElementById('add-column-select');
+    addColumnSelect.value = [...addColumnSelect.options].find((o) => o.textContent === 'Bad Ref').value;
+    addColumnSelect.dispatchEvent(new execDom.window.Event('change', { bubbles: true }));
+
+    const doorsRowNow = [...doc.querySelectorAll('#component-table-body tr.component-row')].find((r) => r.firstChild.textContent === 'Doors');
+    const cells = [...doorsRowNow.querySelectorAll('td')].map((td) => td.textContent);
+    if (cells.some((c) => c.includes('#ERROR'))) pass++;
+    else { fail++; console.error(`FAIL expected an "#ERROR" cell for the "Bad Ref" column, got: ${JSON.stringify(cells)}`); }
+
+    // Clean up so it doesn't confuse later assertions.
+    [...doc.querySelectorAll('#calculated-columns-list .chip')].find((c) => c.querySelector('.chip-label').textContent === 'Bad Ref')
+      ?.querySelector('.chip-remove').dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+  } catch (e) {
+    fail++;
+    console.error('FAIL calculated column per-cell error execution test threw', e);
+  }
+
+  // An invalid formula is flagged in the definition UI itself, before
+  // being added (US-209 Error Handling) — never becomes a column option.
+  try {
+    doc.getElementById('add-calculated-column-btn').dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+    fillCalculatedColumnForm('Broken', '{Size → Width (in)} *');
+    clickCalculatedColumnButton('Add');
+
+    const errorText = doc.querySelector('#calculated-column-inline .saved-config-error')?.textContent;
+    if (errorText) pass++;
+    else { fail++; console.error('FAIL expected an inline error for an unparseable formula'); }
+
+    if (!calculatedColumnChipLabels().includes('Broken')) pass++;
+    else { fail++; console.error('FAIL an unparseable formula should not have been added as a calculated column'); }
+
+    [...doc.querySelectorAll('#calculated-column-inline button')].find((b) => b.textContent === 'Cancel')
+      ?.dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+  } catch (e) {
+    fail += 2;
+    console.error('FAIL invalid-formula execution test threw', e);
+  }
+
+  // A circular reference between two calculated columns is rejected at
+  // definition time with a clear error (US-209).
+  try {
+    doc.getElementById('add-calculated-column-btn').dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+    fillCalculatedColumnForm('Loop A', '{Loop B} + 1');
+    clickCalculatedColumnButton('Add');
+    // "Loop B" doesn't exist yet, so this fails as an unknown-field
+    // parse-time reference? No — {Label} refs are only resolved at
+    // EVALUATION time, not parse time, so this succeeds as a definition.
+    const loopACreated = calculatedColumnChipLabels().includes('Loop A');
+
+    doc.getElementById('add-calculated-column-btn').dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+    fillCalculatedColumnForm('Loop B', '{Loop A} + 1');
+    clickCalculatedColumnButton('Add');
+
+    const errorText = doc.querySelector('#calculated-column-inline .saved-config-error')?.textContent;
+    if (loopACreated && errorText?.toLowerCase().includes('circular')) pass++;
+    else { fail++; console.error(`FAIL expected a circular-reference error when adding "Loop B", got: "${errorText}" (Loop A created: ${loopACreated})`); }
+
+    if (!calculatedColumnChipLabels().includes('Loop B')) pass++;
+    else { fail++; console.error('FAIL "Loop B" should not have been added given the circular reference'); }
+
+    // Clean up.
+    [...doc.querySelectorAll('#calculated-column-inline button')].find((b) => b.textContent === 'Cancel')
+      ?.dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+    [...doc.querySelectorAll('#calculated-columns-list .chip')].find((c) => c.querySelector('.chip-label').textContent === 'Loop A')
+      ?.querySelector('.chip-remove').dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+  } catch (e) {
+    fail += 2;
+    console.error('FAIL circular-reference execution test threw', e);
+  }
+
+  // Renaming a calculated column (editing via its chip) updates its label
+  // everywhere it's used, including as a column header.
+  try {
+    const chip = [...doc.querySelectorAll('#calculated-columns-list .chip')].find((c) => c.querySelector('.chip-label').textContent === 'Constant Twelve');
+    chip.querySelector('.calculated-column-edit-label').dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+
+    const nameInput = doc.querySelector('#calculated-column-inline input');
+    if (nameInput.value === 'Constant Twelve') pass++;
+    else { fail++; console.error(`FAIL edit form should be pre-filled with "Constant Twelve", got "${nameInput.value}"`); }
+
+    nameInput.value = 'Width x2';
+    clickCalculatedColumnButton('Save');
+
+    if (calculatedColumnChipLabels().includes('Width x2') && !calculatedColumnChipLabels().includes('Constant Twelve')) pass++;
+    else { fail++; console.error('FAIL renaming the calculated column did not update its chip', calculatedColumnChipLabels()); }
+
+    const headers = [...doc.querySelectorAll('#component-table-head th')].map((th) => th.textContent);
+    if (headers.includes('Width x2')) pass++;
+    else { fail++; console.error(`FAIL expected the renamed column's header to read "Width x2", got: ${JSON.stringify(headers)}`); }
+  } catch (e) {
+    fail += 3;
+    console.error('FAIL rename (edit) execution test threw', e);
+  }
+
+  // Deleting a calculated column removes it from the column picker, the
+  // shown columns, and the table header.
+  try {
+    const chip = [...doc.querySelectorAll('#calculated-columns-list .chip')].find((c) => c.querySelector('.chip-label').textContent === 'Width x2');
+    chip.querySelector('.chip-remove').dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+
+    if (!calculatedColumnChipLabels().includes('Width x2')) pass++;
+    else { fail++; console.error('FAIL deleting the calculated column left it in the chip list'); }
+
+    const headers = [...doc.querySelectorAll('#component-table-head th')].map((th) => th.textContent);
+    if (!headers.includes('Width x2')) pass++;
+    else { fail++; console.error('FAIL deleting the calculated column should have removed its column from the table', headers); }
+  } catch (e) {
+    fail += 2;
+    console.error('FAIL delete execution test threw', e);
+  }
 } catch (e) {
   fail += 3;
   console.error('FAIL click-to-select execution test threw', e);
