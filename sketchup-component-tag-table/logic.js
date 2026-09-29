@@ -113,19 +113,34 @@ export function recordDiscoveredFields(discovered, attributesObj) {
 
 // ─── Filtering ──────────────────────────────────────────────────────────
 //
-// A filter: { id, field, matchType: 'contains'|'equals'|'startsWith'|'endsWith', text }
-// matched case-insensitively, same four match types as Instance Color
-// Rules' rules. `value` is whatever getFieldValue returned — not
+// A filter: { id, field, matchType: 'contains'|'notContains'|'equals'|
+// 'notEquals'|'startsWith'|'endsWith', text } matched case-insensitively,
+// same four positive match types as Instance Color Rules' rules plus two
+// negated ones (US-202). `value` is whatever getFieldValue returned — not
 // necessarily a string (an Advanced Attribute can hold a number, boolean,
 // etc.) — so it's coerced to a string before matching.
+//
+// A negated match type (notEquals/notContains) matches a missing value
+// (null/undefined) — a component that doesn't even have the field trivially
+// doesn't equal/contain the filter's text, and a user asking for "Tag does
+// not equal Doors" expects an untagged component to show up, not be
+// silently excluded the way a positive filter excludes it.
+export function isNegatedMatchType(matchType) {
+  return matchType === 'notEquals' || matchType === 'notContains';
+}
+
 export function filterMatches(value, filter) {
-  if (value === null || value === undefined || !filter || !filter.text) return false;
+  if (!filter || !filter.text) return false;
+  const negated = isNegatedMatchType(filter.matchType);
+  if (value === null || value === undefined) return negated;
   const haystack = String(value).toLowerCase();
   const needle = filter.text.toLowerCase();
   switch (filter.matchType) {
     case 'equals': return haystack === needle;
+    case 'notEquals': return haystack !== needle;
     case 'startsWith': return haystack.startsWith(needle);
     case 'endsWith': return haystack.endsWith(needle);
+    case 'notContains': return !haystack.includes(needle);
     case 'contains':
     default: return haystack.includes(needle);
   }
@@ -137,6 +152,13 @@ export function filterMatches(value, filter) {
 // (e.g. "Tag equals Doors" AND "Phase equals 2" — user story 13). This is
 // a standard facet-filter combination rule, and it's the only shape that
 // satisfies both stories without a separate AND/OR toggle in the UI.
+//
+// Negated filters (notEquals/notContains) are the one exception, resolved
+// for US-202: OR-ing a positive and a negated match type on the SAME field
+// would trivially match everything (e.g. "Tag equals Doors" OR "Tag does
+// not equal Doors"), so within a field, positive filters still OR together,
+// negated filters AND together, and the two groups AND against each other —
+// see componentMatchesFilters below.
 export function groupFiltersByField(filters) {
   const byField = new Map();
   for (const filter of filters) {
@@ -148,12 +170,20 @@ export function groupFiltersByField(filters) {
 }
 
 // A component passes if, for every field that has at least one active
-// filter, the component matches at least one of that field's filters (OR
-// within a field, AND across fields — see groupFiltersByField above).
+// filter: it matches at least one of that field's positive filters (if any
+// are present), AND it matches every one of that field's negated filters
+// (if any are present) — see groupFiltersByField above for why negated
+// filters AND instead of OR within a field.
 export function componentMatchesFilters(component, filtersByField) {
   for (const fieldFilters of filtersByField.values()) {
-    const matchesAny = fieldFilters.some((f) => filterMatches(getFieldValue(component, f.field), f));
-    if (!matchesAny) return false;
+    const positive = fieldFilters.filter((f) => !isNegatedMatchType(f.matchType));
+    const negated = fieldFilters.filter((f) => isNegatedMatchType(f.matchType));
+    if (positive.length > 0) {
+      const matchesAny = positive.some((f) => filterMatches(getFieldValue(component, f.field), f));
+      if (!matchesAny) return false;
+    }
+    const matchesAllNegated = negated.every((f) => filterMatches(getFieldValue(component, f.field), f));
+    if (!matchesAllNegated) return false;
   }
   return true;
 }
