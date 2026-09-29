@@ -1,0 +1,396 @@
+{
+  "themeName": "Space Relationship",
+  "departments": [
+    {
+      "name": "Room",
+      "color": "#e8710a",
+      "spaces": [
+        {
+          "name": "Kitchen",
+          "targetArea": "150 SF"
+        },
+        {
+          "name": "Living Room",
+          "targetArea": "250 SF"
+        }
+      ]
+    },
+    {
+      "name": "Private",
+      "color": "#f9ab00",
+      "spaces": [
+        {
+          "name": "Bedroom",
+          "targetArea": "140 SF"
+        },
+        {
+          "name": "Bathroom",
+          "targetArea": "50 SF"
+        },
+        {
+          "name": "Office",
+          "targetArea": "120 SF"
+        }
+      ]
+    },
+    {
+      "name": "Circulation",
+      "color": "#9aa0a6",
+      "spaces": [
+        {
+          "name": "Hallway",
+          "targetArea": "60 SF"
+        },
+        {
+          "name": "Entry",
+          "targetArea": "40 SF"
+        }
+      ]
+    },
+    {
+      "name": "Utility",
+      "color": "#5f6368",
+      "spaces": [
+        {
+          "name": "Storage",
+          "targetArea": "30 SF"
+        },
+        {
+          "name": "Garage",
+          "count": 1,
+          "targetArea": "500 SF",
+          "notes": "2 Cars"
+        },
+        {
+          "name": "Mud",
+          "count": 1,
+          "targetArea": "100 SF",
+          "notes": "Adjacent to Garage and Kitchen"
+        }
+      ]
+    },
+    {
+      "name": "Active",
+      "color": "#d93025",
+      "spaces": [
+        {
+          "name": "Family",
+          "count": 1,
+          "targetArea": "300 SF"
+        },
+        {
+          "name": "Dining",
+          "count": 1,
+          "targetArea": "150 SF"
+        }
+      ]
+    }
+  ],
+  "diagram": {
+    "nodes": [
+      {
+        "id": "entry-1790619559496",
+        "label": "Entry",
+        "spaceType": "Circulation",
+        "requiredSizeSqFt": 40,
+        "color": "#9aa0a6",
+        "x": 470.30343183840824,
+        "y": 383.63634193697635
+      },
+      {
+        "id": "hallway-1790619562158",
+        "label": "Hallway",
+        "spaceType": "Circulation",
+        "requiredSizeSqFt": 60,
+        "color": "#9aa0a6",
+        "x": 746.719801562956,
+        "y": 650.6289362809728
+      },
+      {
+        "id": "bedroom-1790619623367",
+        "label": "Bedroom",
+        "spaceType": "Private",
+        "requiredSizeSqFt": 140,
+        "color": "#f9ab00",
+        "x": 911.8141391496547,
+        "y": 800.0000061228106
+      },
+      {
+        "id": "bedroom-1790619629563",
+        "label": "Bedroom",
+        "spaceType": "Private",
+        "requiredSizeSqFt": 140,
+        "color": "#f9ab00",
+        "x": 1141.7414060440556,
+        "y": 435.13878594300377
+      },
+      {
+        "id": "bedroom-1790619633831",
+        "label": "Bedroom",
+        "spaceType": "Private",
+        "requiredSizeSqFt": 140,
+        "color": "#f9ab00",
+        "x": 806.4682284990947,
+        "y": 355.0314506992302
+      },
+      {
+        "id": "bathroom-1790619640323",
+        "label": "Bathroom",
+        "spaceType": "Private",
+        "requiredSizeSqFt": 50,
+        "color": "#f9ab00",
+        "x": 979.4242012089696,
+        "y": 303.1446580173286
+      },
+      {
+        "id": "bathroom-1790619645108",
+        "label": "Bathroom",
+        "spaceType": "Private",
+        "requiredSizeSqFt": 50,
+        "color": "#f9ab00",
+        "x": 1124.0782874754107,
+        "y": 620.754722312605
+      },
+      {
+        "id": "hallway-1790619679592",
+        "label": "Hallway",
+        "spaceType": "Circulation",
+        "requiredSizeSqFt": 60,
+        "color": "#9aa0a6",
+        "x": 47.72547092931029,
+        "y": 658.8663375961257
+      },
+      {
+        "id": "storage-1790619690806",
+        "label": "Storage",
+        "spaceType": "Utility",
+        "requiredSizeSqFt": 30,
+        "color": "#5f6368",
+        "x": 1041.1683262764723,
+        "y": 915.3752749582018
+      },
+      {
+        "id": "storage-1790619698163",
+        "label": "Storage",
+        "spaceType": "Utility",
+        "requiredSizeSqFt": 30,
+        "color": "#5f6368",
+        "x": 832.479152528719,
+        "y": 158.56272134657206
+      },
+      {
+        "id": "storage-1790619709124",
+        "label": "Storage",
+        "spaceType": "Utility",
+        "requiredSizeSqFt": 30,
+        "color": "#5f6368",
+        "x": 1295.1153771116815,
+        "y": 344.6229988000847
+      },
+      {
+        "id": "storage-1790619716052",
+        "label": "Storage",
+        "spaceType": "Utility",
+        "requiredSizeSqFt": 30,
+        "color": "#5f6368",
+        "x": 613.7326531882945,
+        "y": 804.7449167765905
+      },
+      {
+        "id": "living-room-1790619743506",
+        "label": "Living Room",
+        "spaceType": "Room",
+        "requiredSizeSqFt": 250,
+        "color": "#e8710a",
+        "x": -364.6513430037718,
+        "y": 448.31171196623154
+      },
+      {
+        "id": "family-1790619794720",
+        "label": "Family",
+        "spaceType": "Active",
+        "requiredSizeSqFt": 300,
+        "color": "#d93025",
+        "x": -523.7408556129741,
+        "y": 973.8501596243584
+      },
+      {
+        "id": "dining-1790619830978",
+        "label": "Dining",
+        "spaceType": "Active",
+        "requiredSizeSqFt": 150,
+        "color": "#d93025",
+        "x": -554.8047395958298,
+        "y": 646.26737086007
+      },
+      {
+        "id": "garage-1790619919534",
+        "label": "Garage",
+        "spaceType": "Utility",
+        "requiredSizeSqFt": 500,
+        "color": "#5f6368",
+        "x": 239.8395805523313,
+        "y": 1079.2572154260117
+      },
+      {
+        "id": "mud-1790619921662",
+        "label": "Mud",
+        "spaceType": "Utility",
+        "requiredSizeSqFt": 100,
+        "color": "#5f6368",
+        "x": 140.39227674747337,
+        "y": 882.6227725700973
+      },
+      {
+        "id": "kitchen-1790619930531",
+        "label": "Kitchen",
+        "spaceType": "Room",
+        "requiredSizeSqFt": 150,
+        "color": "#e8710a",
+        "x": -154.00570982815577,
+        "y": 875.8467442123043
+      },
+      {
+        "id": "office-1790619989446",
+        "label": "Office",
+        "spaceType": "Private",
+        "requiredSizeSqFt": 120,
+        "color": "#f9ab00",
+        "x": 422.37662648161245,
+        "y": 680.0498532323179
+      }
+    ],
+    "relationships": [
+      {
+        "source": "hallway-1790619562158",
+        "target": "entry-1790619559496",
+        "relationshipType": "connect-to"
+      },
+      {
+        "source": "bedroom-1790619623367",
+        "target": "hallway-1790619562158",
+        "relationshipType": "connect-to"
+      },
+      {
+        "source": "bedroom-1790619629563",
+        "target": "hallway-1790619562158",
+        "relationshipType": "connect-to"
+      },
+      {
+        "source": "hallway-1790619562158",
+        "target": "bedroom-1790619633831",
+        "relationshipType": "connect-to"
+      },
+      {
+        "source": "bathroom-1790619640323",
+        "target": "bedroom-1790619633831",
+        "relationshipType": "within"
+      },
+      {
+        "source": "bathroom-1790619645108",
+        "target": "bedroom-1790619629563",
+        "relationshipType": "next-to"
+      },
+      {
+        "source": "bathroom-1790619645108",
+        "target": "bedroom-1790619623367",
+        "relationshipType": "next-to"
+      },
+      {
+        "source": "bathroom-1790619645108",
+        "target": "hallway-1790619562158",
+        "relationshipType": "connect-to"
+      },
+      {
+        "source": "bathroom-1790619645108",
+        "target": "bathroom-1790619640323",
+        "relationshipType": "next-to"
+      },
+      {
+        "source": "entry-1790619559496",
+        "target": "hallway-1790619679592",
+        "relationshipType": "connect-to"
+      },
+      {
+        "source": "storage-1790619690806",
+        "target": "bedroom-1790619623367",
+        "relationshipType": "within"
+      },
+      {
+        "source": "storage-1790619698163",
+        "target": "bedroom-1790619633831",
+        "relationshipType": "within"
+      },
+      {
+        "source": "storage-1790619709124",
+        "target": "bedroom-1790619629563",
+        "relationshipType": "within"
+      },
+      {
+        "source": "storage-1790619716052",
+        "target": "hallway-1790619562158",
+        "relationshipType": "connect-to"
+      },
+      {
+        "source": "living-room-1790619743506",
+        "target": "entry-1790619559496",
+        "relationshipType": "connect-to"
+      },
+      {
+        "source": "dining-1790619830978",
+        "target": "living-room-1790619743506",
+        "relationshipType": "connect-to"
+      },
+      {
+        "source": "dining-1790619830978",
+        "target": "family-1790619794720",
+        "relationshipType": "connect-to"
+      },
+      {
+        "source": "hallway-1790619679592",
+        "target": "dining-1790619830978",
+        "relationshipType": "connect-to"
+      },
+      {
+        "source": "mud-1790619921662",
+        "target": "hallway-1790619679592",
+        "relationshipType": "connect-to"
+      },
+      {
+        "source": "mud-1790619921662",
+        "target": "garage-1790619919534",
+        "relationshipType": "connect-to"
+      },
+      {
+        "source": "kitchen-1790619930531",
+        "target": "mud-1790619921662",
+        "relationshipType": "connect-to"
+      },
+      {
+        "source": "kitchen-1790619930531",
+        "target": "hallway-1790619679592",
+        "relationshipType": "connect-to"
+      },
+      {
+        "source": "kitchen-1790619930531",
+        "target": "family-1790619794720",
+        "relationshipType": "connect-to"
+      },
+      {
+        "source": "kitchen-1790619930531",
+        "target": "dining-1790619830978",
+        "relationshipType": "connect-to"
+      },
+      {
+        "source": "hallway-1790619679592",
+        "target": "office-1790619989446",
+        "relationshipType": "connect-to"
+      },
+      {
+        "source": "office-1790619989446",
+        "target": "entry-1790619559496",
+        "relationshipType": "connect-to"
+      }
+    ]
+  }
+}
