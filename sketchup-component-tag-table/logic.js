@@ -1,4 +1,4 @@
-// Component Tag Table — pure logic.
+// Component Table — pure logic.
 //
 // No DOM, no JSA calls anywhere in this file. `verify/verify.mjs` imports
 // these functions directly (an ES module, unlike the older single-file JSA

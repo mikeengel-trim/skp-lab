@@ -1,10 +1,11 @@
-# Component Tag Table
+# Component Table
 
 A JSA extension that opens a floating, resizable window with a live-updating
-table: every component in the model, counted and grouped by tag. Pick which
-attribute columns show up, filter down to exactly what you're reviewing, and
-the counts update automatically as the model changes — no export, no
-spreadsheet. Built from the "Component Count by Tag" PRD (draft v0.4).
+table: every component in the model, counted and grouped by a chosen
+attribute (Tag by default). Pick which attribute columns show up, filter down
+to exactly what you're reviewing, and the counts update automatically as the
+model changes — no export, no spreadsheet. Built from the "Component Count by
+Tag" PRD (draft v0.4).
 
 Read-only: there is no `operation.*`/`op.*` call anywhere in this extension.
 Tags, materials, attributes and the active scene are never touched.
@@ -13,9 +14,11 @@ Tags, materials, attributes and the active scene are never touched.
 
 ## What it does
 
-- Walks the model and counts every `ComponentInstance`, grouped by its own
-  tag. Components with no tag land in a synthetic **Untagged** group, so
-  tagging gaps surface on their own (user story 4).
+- Walks the model and counts every `ComponentInstance`, grouped by tag —
+  Tag is the current grouping key, but it's just one column among the same
+  set of attributes columns and filters can use; components with no tag land
+  in a synthetic **Untagged** group, so tagging gaps surface on their own
+  (user story 4).
 - **Columns are user-chosen** from whatever attributes actually exist in the
   model — six built-ins (Tag, Name, Definition Name, Material, GUID,
   Description) plus every Advanced Attribute dictionary/key pair discovered
@@ -62,7 +65,7 @@ resolved for this build:
 ## Layout
 
 ```
-sketchup-component-tag-table/
+sketchup-component-table/
 ├── manifest.json     # JSA manifest — one floating-window command
 ├── index.html        # markup + style link + script tags
 ├── style.css          # toolbar/table styling
@@ -99,7 +102,7 @@ repo no longer ships extensions as a drag-and-drop zip (see
 ## Verification
 
 ```bash
-cd sketchup-component-tag-table/verify
+cd sketchup-component-table/verify
 npm install
 npm test
 ```

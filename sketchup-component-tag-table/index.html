@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Component Tag Table</title>
+  <title>Component Table</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.habitat.sketchup.com/dist/sketchup-js-api/v2/sketchup-js-api.min.js"></script>
 </head>
 <body>
   <header class="app-header">
     <div class="title-block">
-      <h1>Component Tag Table</h1>
-      <p>Every component in the model, grouped by tag.</p>
+      <h1>Component Table</h1>
+      <p>Every component in the model, grouped by your chosen attribute.</p>
     </div>
     <span class="live-indicator" id="live-indicator" hidden><span class="live-dot"></span>Live</span>
     <span class="status-pill" id="status-pill">Connecting…</span>
@@ -50,9 +50,9 @@
   </div>
 
   <div class="table-wrapper" id="table-wrapper">
-    <table id="tag-table">
-      <thead id="tag-table-head"></thead>
-      <tbody id="tag-table-body"></tbody>
+    <table id="component-table">
+      <thead id="component-table-head"></thead>
+      <tbody id="component-table-body"></tbody>
     </table>
     <div class="empty-state" id="empty-state" hidden>No components match the current filters.</div>
   </div>
