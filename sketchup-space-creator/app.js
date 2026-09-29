@@ -20,13 +20,21 @@ const LARGE_COUNT_THRESHOLD = 10;
 const form = document.getElementById('space-form');
 const nameInput = document.getElementById('name');
 const nameWarning = document.getElementById('name-warning');
+const nameError = document.getElementById('name-error');
 const widthFt = document.getElementById('width-ft');
 const widthIn = document.getElementById('width-in');
+const widthError = document.getElementById('width-error');
 const depthFt = document.getElementById('depth-ft');
 const depthIn = document.getElementById('depth-in');
+const depthError = document.getElementById('depth-error');
 const heightFt = document.getElementById('height-ft');
 const heightIn = document.getElementById('height-in');
+const heightError = document.getElementById('height-error');
 const tagSelect = document.getElementById('tag-select');
+const tagPickerButton = document.getElementById('tag-picker-button');
+const tagPickerLabel = document.getElementById('tag-picker-label');
+const tagPickerSwatch = document.getElementById('tag-picker-swatch');
+const tagPickerList = document.getElementById('tag-picker-list');
 const countValue = document.getElementById('count-value');
 const countDown = document.getElementById('count-down');
 const countUp = document.getElementById('count-up');
@@ -84,18 +92,52 @@ function updateButtons() {
   placeButton.disabled = !ready;
 }
 
-form.addEventListener('input', updateButtons);
+// Which fields the user has interacted with (blurred) at least once — an
+// error only shows once a field has been touched, never on first load, and
+// re-renders on every input so it clears the instant the field becomes
+// valid again, with no separate validation path from updateButtons() above.
+const touchedFields = { name: false, width: false, depth: false, height: false };
+
+function setFieldError(container, errorEl, invalid) {
+  errorEl.hidden = !invalid;
+  container.classList.toggle('field-invalid', invalid);
+}
+
+function renderFieldErrors() {
+  setFieldError(nameInput, nameError, touchedFields.name && nameInput.value.trim() === '');
+  setFieldError(widthFt.closest('.feet-inches'), widthError, touchedFields.width && feetAndInchesToInches(widthFt, widthIn) <= 0);
+  setFieldError(depthFt.closest('.feet-inches'), depthError, touchedFields.depth && feetAndInchesToInches(depthFt, depthIn) <= 0);
+  setFieldError(heightFt.closest('.feet-inches'), heightError, touchedFields.height && feetAndInchesToInches(heightFt, heightIn) <= 0);
+}
+
+function markTouched(field) {
+  touchedFields[field] = true;
+  renderFieldErrors();
+}
+
+form.addEventListener('input', () => {
+  updateButtons();
+  renderFieldErrors();
+});
 
 // Checked on blur rather than on every keystroke: it walks the model's
 // entity tree, which isn't free, and a name being momentarily "in progress"
 // as the user types shouldn't flash a warning.
 nameInput.addEventListener('blur', () => {
+  markTouched('name');
   void checkDuplicateName();
 });
+widthFt.addEventListener('blur', () => markTouched('width'));
+widthIn.addEventListener('blur', () => markTouched('width'));
+depthFt.addEventListener('blur', () => markTouched('depth'));
+depthIn.addEventListener('blur', () => markTouched('depth'));
+heightFt.addEventListener('blur', () => markTouched('height'));
+heightIn.addEventListener('blur', () => markTouched('height'));
 
-// Refresh right before the user picks a tag, so one added elsewhere while
-// this panel stayed open still shows up without needing to reopen it.
-tagSelect.addEventListener('focus', () => {
+// Refresh right before the user opens the tag picker, so a tag added
+// elsewhere while this panel stayed open still shows up without needing to
+// reopen it — the same trigger the native <select>'s own focus event used.
+tagPickerButton.addEventListener('focus', () => {
   void loadTags();
 });
 
@@ -105,6 +147,20 @@ tagSelect.addEventListener('focus', () => {
 // TagManager is a point-in-time snapshot, not a live view — it has its own
 // refresh() for exactly this reason — so this has to be called again
 // whenever the list might be stale, not just once at connect.
+// A Tag's color could plausibly come back as a hex string, or as an
+// {r,g,b} object (mirroring SketchUp::Color) — handled defensively since
+// nothing else in this repo has read a tag's color back before (only ever
+// set via Color.fromHex). Anything else unrecognized renders no swatch
+// rather than a broken one.
+function tagColorToCss(color) {
+  if (!color) return undefined;
+  if (typeof color === 'string') return color;
+  if (typeof color.r === 'number' && typeof color.g === 'number' && typeof color.b === 'number') {
+    return `rgb(${color.r}, ${color.g}, ${color.b})`;
+  }
+  return undefined;
+}
+
 async function loadTags() {
   const previousValue = tagSelect.value;
 
@@ -116,7 +172,10 @@ async function loadTags() {
     // The model's own built-in default tag is also named "Untagged" — skip
     // it so it doesn't duplicate the synthetic "no tag" option above.
     if (tag.name === 'Untagged') continue;
-    tagSelect.append(new Option(tag.name, tag.name));
+    const option = new Option(tag.name, tag.name);
+    const color = tagColorToCss(tag.color);
+    if (color) option.dataset.color = color;
+    tagSelect.append(option);
   }
 
   // Keep whatever was selected if it still exists; a tag added elsewhere
@@ -124,7 +183,125 @@ async function loadTags() {
   if (tagManager.getTagByName(previousValue) !== undefined) {
     tagSelect.value = previousValue;
   }
+
+  renderTagPicker();
 }
+
+// A custom listbox layered over the (now hidden) native <select> above,
+// which stays the single source of truth: this only ever reads/writes
+// tagSelect.value, so placeSpaces()/applySpaceSelection() need no changes.
+function renderTagPicker() {
+  tagPickerList.replaceChildren();
+  for (const option of tagSelect.options) {
+    const item = document.createElement('li');
+    item.className = 'tag-picker-option';
+    item.setAttribute('role', 'option');
+    item.tabIndex = -1;
+    item.dataset.value = option.value;
+
+    const swatch = document.createElement('span');
+    swatch.classList.add('tag-swatch');
+    if (option.dataset.color) {
+      swatch.style.backgroundColor = option.dataset.color;
+    } else {
+      // "Untagged" (and any tag with no readable color) gets a neutral
+      // placeholder rather than no swatch at all, per US-102.
+      swatch.classList.add('tag-swatch-none');
+    }
+    item.append(swatch);
+
+    const label = document.createElement('span');
+    label.textContent = option.textContent;
+    item.append(label);
+
+    item.addEventListener('click', () => selectTagOption(option.value));
+    tagPickerList.append(item);
+  }
+  syncTagPickerButton();
+}
+
+function syncTagPickerButton() {
+  const selected = tagSelect.options[tagSelect.selectedIndex];
+  tagPickerLabel.textContent = selected ? selected.textContent : 'Untagged';
+  if (selected?.dataset.color) {
+    tagPickerSwatch.style.backgroundColor = selected.dataset.color;
+    tagPickerSwatch.classList.remove('tag-swatch-none');
+  } else {
+    tagPickerSwatch.style.backgroundColor = '';
+    tagPickerSwatch.classList.add('tag-swatch-none');
+  }
+  for (const item of tagPickerList.children) {
+    item.setAttribute('aria-selected', String(item.dataset.value === tagSelect.value));
+  }
+}
+
+function selectTagOption(value) {
+  tagSelect.value = value;
+  syncTagPickerButton();
+  closeTagPicker();
+  tagPickerButton.focus();
+}
+
+let tagPickerOpen = false;
+
+function openTagPicker() {
+  tagPickerOpen = true;
+  tagPickerList.hidden = false;
+  tagPickerButton.setAttribute('aria-expanded', 'true');
+  const items = [...tagPickerList.children];
+  const current = items.find(item => item.dataset.value === tagSelect.value) ?? items[0];
+  current?.focus();
+}
+
+function closeTagPicker() {
+  tagPickerOpen = false;
+  tagPickerList.hidden = true;
+  tagPickerButton.setAttribute('aria-expanded', 'false');
+}
+
+tagPickerButton.addEventListener('click', () => {
+  if (tagPickerOpen) {
+    closeTagPicker();
+  } else {
+    openTagPicker();
+  }
+});
+
+// Standard listbox keyboard nav: Up/Down move between options, Home/End
+// jump to the ends, Enter/Space selects, Escape closes without changing
+// the selection — the "keyboard navigation continues to work" this
+// control replaces a native <select>'s built-in behavior with.
+tagPickerList.addEventListener('keydown', event => {
+  const items = [...tagPickerList.children];
+  const currentIndex = items.indexOf(document.activeElement);
+
+  if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    items[Math.min(items.length - 1, currentIndex + 1)]?.focus();
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    items[Math.max(0, currentIndex - 1)]?.focus();
+  } else if (event.key === 'Home') {
+    event.preventDefault();
+    items[0]?.focus();
+  } else if (event.key === 'End') {
+    event.preventDefault();
+    items[items.length - 1]?.focus();
+  } else if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    if (items[currentIndex]) selectTagOption(items[currentIndex].dataset.value);
+  } else if (event.key === 'Escape') {
+    event.preventDefault();
+    closeTagPicker();
+    tagPickerButton.focus();
+  }
+});
+
+document.addEventListener('click', event => {
+  if (tagPickerOpen && !document.getElementById('tag-picker').contains(event.target)) {
+    closeTagPicker();
+  }
+});
 
 // Builds one box: a floor rectangle pushed to height, named and tagged.
 //
@@ -628,8 +805,10 @@ function applySpaceSelection({ departmentName, space }) {
     tagSelect.value = '';
     report(`"${departmentName}" isn't a tag in this model yet — use "Add Tags by Theme" to create it.`);
   }
+  syncTagPickerButton();
 
   updateButtons();
+  renderFieldErrors();
   void checkDuplicateName();
 }
 

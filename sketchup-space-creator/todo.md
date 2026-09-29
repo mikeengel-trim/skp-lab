@@ -34,7 +34,7 @@ Sample prompt to kickoff work by claude based on the Todo.md
       offset applied).
     - Existing single-space placement tests continue to pass.
 
-- [ ] **US-102: Tag color swatch in the tag dropdown**
+- [x] **US-102: Tag color swatch in the tag dropdown**
   As a user picking a tag for a new space, I want to see each tag's color
   next to its name, so that I can match the space to the right department at
   a glance instead of reading names only.
@@ -48,7 +48,7 @@ Sample prompt to kickoff work by claude based on the Todo.md
     - Selecting a tag still sets the same underlying value used by
       `placeSpaces()`.
 
-- [ ] **US-103: Inline field validation messages**
+- [x] **US-103: Inline field validation messages**
   As a user filling out the Space Creator form, I want to see which specific
   field is invalid (not just a disabled Place button), so that I know what to
   fix without guessing.

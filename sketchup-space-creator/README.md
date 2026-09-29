@@ -9,13 +9,28 @@ model. Lives in the Sidebar.
   before they reach the API (`feetAndInchesToInches`).
 - Populating a `<select>` from the model's actual tags via
   `model.getTagManager()` → `tagManager.tags`, with an "Untagged" option that
-  simply omits `drawingElementSetTag`.
+  simply omits `drawingElementSetTag`. The native `<select>` (`#tag-select`)
+  is kept as the actual source of truth — `placeSpaces()` and
+  `applySpaceSelection()` both still just read `tagSelect.value` — but it's
+  visually hidden behind a custom listbox (`#tag-picker-button` +
+  `#tag-picker-list`) that renders a small color swatch from each tag's
+  `.color` beside its name, since a native `<option>` can't do that.
+  "Untagged" (and any tag with no readable color) gets a neutral gray swatch
+  instead of none. The custom list supports the same Up/Down/Home/End/Enter/
+  Escape keyboard navigation a `<select>` gives for free, and still refreshes
+  via `loadTags()` when the button receives focus, same trigger as before.
 - Looking a tag up by name before creating it (`tagManager.getTagByName(name)
   ?? operation.createTag(name)`), so picking an existing tag never creates a
   duplicate.
 - Placing several copies as one undo step: the loop over `count` and every
   `createGroup`/`createFace`/`facePushPull`/`groupSetName`/`drawingElementSetTag`
   call for it all run inside a single `performOperation()`.
+- Inline validation messages on Name/Width/Depth/Height, layered on top of
+  `updateButtons()`'s existing disabled-state check rather than replacing it:
+  a `touchedFields` map tracks which fields the user has blurred at least
+  once, so an error only ever appears after interaction (never on first
+  load), and every `input` event re-renders it immediately so it clears the
+  instant the field becomes valid again.
 - Re-fetching `TagManager` rather than caching it: it's a point-in-time
   snapshot (it has its own `refresh()` for exactly this reason), so
   `loadTags()` runs again on `tagSelect`'s `focus` event and on

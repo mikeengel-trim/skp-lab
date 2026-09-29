@@ -198,3 +198,90 @@ select + .field-label {
   gap: 8px;
   margin-top: 10px;
 }
+
+.tag-picker {
+  position: relative;
+}
+
+.tag-picker-button {
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tag-picker-button:focus {
+  outline: 2px solid #1a73e8;
+  outline-offset: 1px;
+}
+
+.tag-picker-label {
+  flex: 1;
+}
+
+.tag-swatch {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.tag-swatch-none {
+  background: #eee;
+}
+
+.tag-picker-list {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.tag-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.tag-picker-option:hover,
+.tag-picker-option:focus {
+  background: #f2f6ff;
+  outline: none;
+}
+
+.tag-picker-option[aria-selected="true"] {
+  background: #e8f0fe;
+}
+
+.field-error {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #c92a2a;
+}
+
+.field-invalid {
+  border-color: #c92a2a !important;
+}
