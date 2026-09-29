@@ -45,6 +45,44 @@ const MAX_COMPONENTS = 200_000;
 const MAX_TREE_DEPTH = 64; // guards a pathological/cyclic nesting chain, not a real modeling limit
 const MAX_DEFINITION_VISITS = 5000; // same guard, for a shared definition entered many times
 
+// US-206 field audit: confirmed against the live JSA API reference plus
+// sketchup-tag-color-viewer's own source-verified corrections (that
+// reference doc's prose already claims two properties that don't match the
+// real SDK — `ObserverHandle.end()` and `ComponentInstance.transformation`
+// — both wrong; the real properties are `.stop()`/`.endStream()` and
+// `.transform`). Transform (as X/Y/Z translation) and Size (as Width/
+// Height/Depth) are both real, already-computed built-ins — `.transform`
+// and `.bounds` — so reading them here costs nothing extra beyond what
+// this walk already does per instance; no live-update performance concern.
+// Area is NOT a real per-component/per-definition property (only
+// `Face.area` exists) — computing it would mean walking every instance's
+// own faces on every read, a real and currently unvalidated live-update
+// cost with no real SketchUp session available to test it against a large
+// model. Deferred rather than guessed; see README.md and todo.md.
+// `locked`/`hidden` (both booleans) are also real built-ins this audit
+// found but isn't adding here, since a boolean field doesn't fit this
+// extension's numeric-sum/text-list column model without its own design
+// question this story didn't ask to resolve.
+
+// Extracts a Transformation's translation (X/Y/Z) as plain numbers, or null
+// if the shape can't be confidently read — deliberately NOT falling back
+// to identity/zero the way sketchup-tag-color-viewer's own matrixOf() does,
+// because that file only ever used the fallback for a best-effort 3D
+// position (a wrong-but-plausible position just looks slightly off), while
+// here a wrong 0 would silently corrupt a SUMMED numeric column instead of
+// just being visibly missing — a materially worse failure mode for a table
+// whose whole point is trustworthy aggregation. `_m` is a plain (not
+// truly private) property on Transformation, confirmed by
+// sketchup-tag-color-viewer directly from the SDK source; translation
+// occupies indices 12–14 of the row-major 16-number matrix either way.
+function transformTranslation(transform) {
+  const matrix = Array.isArray(transform) && transform.length === 16 ? transform
+    : Array.isArray(transform?._m) && transform._m.length === 16 ? transform._m
+    : null;
+  if (!matrix) return { x: null, y: null, z: null };
+  return { x: matrix[12], y: matrix[13], z: matrix[14] };
+}
+
 async function collectComponents(model) {
   const tagManager = await model.getTagManager();
   const tagById = new Map((tagManager.tags || []).map((t) => [t.id, t]));
@@ -66,6 +104,8 @@ async function collectComponents(model) {
     const instanceAttrs = attributesToPlainObject(instance.attributes);
     const attributes = mergeAttributeObjects(definitionAttrs, instanceAttrs);
     recordDiscoveredFields(discoveredFields, attributes);
+    const translation = transformTranslation(instance.transform);
+    const bounds = instance.bounds;
     return {
       tag: instance.tagId != null ? (tagById.get(instance.tagId)?.name ?? null) : null,
       name: instance.name || null,
@@ -73,6 +113,12 @@ async function collectComponents(model) {
       material: instance.materialId != null ? (materials.findMaterialById(instance.materialId)?.name ?? null) : null,
       guid: instance.guid || null,
       description: instance.description || null,
+      transformX: translation.x,
+      transformY: translation.y,
+      transformZ: translation.z,
+      sizeWidth: bounds?.width ?? null,
+      sizeHeight: bounds?.height ?? null,
+      sizeDepth: bounds?.depth ?? null,
       attributes,
       // Kept for US-204's click-to-select: a persistent Entity (not an
       // ephemeral operation Ref), so it's still valid to pass to

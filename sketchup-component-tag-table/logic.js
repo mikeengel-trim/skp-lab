@@ -25,6 +25,18 @@ export const BUILTIN_FIELDS = [
   { id: 'material', label: 'Material' },
   { id: 'guid', label: 'GUID' },
   { id: 'description', label: 'Description' },
+  // US-206: Transform (translation) and Size, decomposed into scalar
+  // sub-fields the same way every other field here is a single value — see
+  // app.js's buildComponentRecord for where these are actually read off
+  // the JSA ComponentInstance. Units are SketchUp's raw internal inches,
+  // hence the "(in)" in each label, per the "format sensibly re: units"
+  // requirement — no unit conversion happens anywhere in this extension.
+  { id: 'transformX', label: 'Transform → X (in)' },
+  { id: 'transformY', label: 'Transform → Y (in)' },
+  { id: 'transformZ', label: 'Transform → Z (in)' },
+  { id: 'sizeWidth', label: 'Size → Width (in)' },
+  { id: 'sizeHeight', label: 'Size → Height (in)' },
+  { id: 'sizeDepth', label: 'Size → Depth (in)' },
 ];
 
 export const UNTAGGED_LABEL = 'Untagged';
@@ -62,6 +74,12 @@ export function getFieldValue(component, fieldId) {
     case 'material': return component.material;
     case 'guid': return component.guid;
     case 'description': return component.description;
+    case 'transformX': return component.transformX ?? null;
+    case 'transformY': return component.transformY ?? null;
+    case 'transformZ': return component.transformZ ?? null;
+    case 'sizeWidth': return component.sizeWidth ?? null;
+    case 'sizeHeight': return component.sizeHeight ?? null;
+    case 'sizeDepth': return component.sizeDepth ?? null;
     default: {
       const attr = decodeAttributeFieldId(fieldId);
       if (!attr) return null;
@@ -356,13 +374,21 @@ export function aggregateColumn(components, fieldId, isNumeric) {
   return { type: 'mixed', values: unique, count: unique.length };
 }
 
+// Rounds a summed numeric value to 4 decimal places before display — enough
+// to collapse the floating-point noise a geometry-derived sum can pick up
+// (e.g. Transform/Size values from US-206 summing to 47.999999999997)
+// without truncating a genuine attribute-provided decimal like 3.5.
+function formatNumber(value) {
+  return String(Math.round(value * 10000) / 10000);
+}
+
 // Renders one aggregated cell as display text. `expanded` only affects a
 // 'mixed' cell — the caller (app.js) tracks which cells the user has
 // clicked to expand, per user story 23.
 export function formatColumnCell(summary, expanded) {
   switch (summary.type) {
     case 'empty': return '—';
-    case 'sum': return String(summary.value);
+    case 'sum': return formatNumber(summary.value);
     case 'single': return summary.value;
     case 'list': return summary.values.join(', ');
     case 'mixed':
