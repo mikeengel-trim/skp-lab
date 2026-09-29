@@ -1,10 +1,17 @@
 // Loads the ACTUAL shipped index.html into jsdom and confirms every id
 // app.js looks up via el('...')/document.getElementById('...') really
 // exists in the static markup — cheap insurance against an id typo between
-// HTML and JS. Table rows/chips/filter rows are built dynamically so their
-// ids/classes aren't in the static markup and aren't checked here; this
-// only covers the fixed shell around them. Does not execute app.js itself
-// (it needs a live `SketchUpApi` global this harness doesn't provide).
+// HTML and JS. This part only covers the fixed shell (table rows/chips/
+// filter rows are built dynamically, so their ids/classes aren't in the
+// static markup and aren't checked here) and never executes app.js.
+//
+// The second half of this file (from "Execution test: click-to-select"
+// onward, US-204/US-205) does execute the real shipped app.js — mocking
+// the handful of JSA calls it makes (SketchUpApi, model.*) and driving it
+// with real simulated DOM events (clicks, select/input changes) — covering
+// the column picker, filter rows, Mixed (N) expand/collapse, and the empty
+// "no components match" state, none of which the static-markup checks
+// above can see since they're all built at runtime.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -108,15 +115,22 @@ class ComponentInstance {
 const doorA = new ComponentInstance({ id: 'door-a', tagId: 1 });
 const doorB = new ComponentInstance({ id: 'door-b', tagId: 1 });
 const windowA = new ComponentInstance({ id: 'window-a', tagId: 2 });
+// 4 distinct guids in one tag group so a `guid` column lands in aggregateColumn's
+// 'mixed' bucket (MIXED_VALUE_THRESHOLD = 3) — used by the Mixed (N)
+// expand/collapse test below (US-205).
+const fixtureA = new ComponentInstance({ id: 'fixture-a', tagId: 3 });
+const fixtureB = new ComponentInstance({ id: 'fixture-b', tagId: 3 });
+const fixtureC = new ComponentInstance({ id: 'fixture-c', tagId: 3 });
+const fixtureD = new ComponentInstance({ id: 'fixture-d', tagId: 3 });
 
 const selectionCalls = [];
 let mockModel;
 mockModel = {
-  getTagManager: async () => ({ tags: [{ id: 1, name: 'Doors' }, { id: 2, name: 'Windows' }] }),
+  getTagManager: async () => ({ tags: [{ id: 1, name: 'Doors' }, { id: 2, name: 'Windows' }, { id: 3, name: 'Fixtures' }] }),
   getMaterials: async () => ({ findMaterialById: () => null }),
   findEntity: async () => null,
   refresh: async () => mockModel,
-  entities: { get: async () => [doorA, doorB, windowA] },
+  entities: { get: async () => [doorA, doorB, windowA, fixtureA, fixtureB, fixtureC, fixtureD] },
   updateSelection: async (entities, mode) => { selectionCalls.push({ entities: [...entities], mode }); },
 };
 
@@ -176,6 +190,127 @@ try {
   } else {
     fail += 3;
     console.error('FAIL expected rendered "Doors" and "Windows" rows with class .component-row, found none');
+  }
+
+  // ─── Execution tests: broader DOM/integration coverage (US-205) ─────────
+  //
+  // Continues driving the SAME loaded app instance (app.js only runs its
+  // module-level setup once per process) via real simulated UI events,
+  // rather than re-importing — this is exactly how a single browser session
+  // would exercise these interactions in sequence.
+  const doc = execDom.window.document;
+
+  // Column add / reorder / remove.
+  try {
+    const addColumnSelect = doc.getElementById('add-column-select');
+    addColumnSelect.value = 'material';
+    addColumnSelect.dispatchEvent(new execDom.window.Event('change', { bubbles: true }));
+
+    const chipLabels = () => [...doc.querySelectorAll('#columns-list .chip')].map((c) => c.querySelector('.chip-label').textContent);
+    if (JSON.stringify(chipLabels()) === JSON.stringify(['Definition Name', 'Material'])) pass++;
+    else { fail++; console.error('FAIL adding "material" column did not append a "Material" chip', chipLabels()); }
+
+    // Move the second chip (Material) left, swapping the two columns.
+    const materialChip = [...doc.querySelectorAll('#columns-list .chip')].find((c) => c.querySelector('.chip-label').textContent === 'Material');
+    materialChip.querySelector('.chip-btn').dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true })); // first .chip-btn is the "move left" (↑) button
+    if (JSON.stringify(chipLabels()) === JSON.stringify(['Material', 'Definition Name'])) pass++;
+    else { fail++; console.error('FAIL moving the "Material" chip left did not reorder the columns', chipLabels()); }
+
+    // Remove the (now-first) Material chip.
+    const chipToRemove = [...doc.querySelectorAll('#columns-list .chip')].find((c) => c.querySelector('.chip-label').textContent === 'Material');
+    chipToRemove.querySelector('.chip-remove').dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+    if (JSON.stringify(chipLabels()) === JSON.stringify(['Definition Name'])) pass++;
+    else { fail++; console.error('FAIL removing the "Material" chip did not leave just "Definition Name"', chipLabels()); }
+  } catch (e) {
+    fail += 3;
+    console.error('FAIL column add/reorder/remove execution test threw', e);
+  }
+
+  // Filter row add / remove.
+  try {
+    doc.getElementById('add-filter-btn').dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+    const rows = doc.querySelectorAll('#filters-list .filter-row');
+    if (rows.length === 1) pass++;
+    else { fail++; console.error(`FAIL expected 1 filter row after "+ Add filter", found ${rows.length}`); }
+
+    const row = rows[0];
+    const fieldValue = row.querySelector('.filter-field')?.value;
+    const matchTypeValue = row.querySelector('.filter-match-type')?.value;
+    if (fieldValue === 'tag' && matchTypeValue === 'contains') pass++;
+    else { fail++; console.error(`FAIL new filter row defaults: expected field 'tag'/matchType 'contains', got '${fieldValue}'/'${matchTypeValue}'`); }
+
+    row.querySelector('.chip-remove').dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+    const rowsAfterRemove = doc.querySelectorAll('#filters-list .filter-row');
+    const clearBtnDisabled = doc.getElementById('clear-filters-btn').disabled;
+    if (rowsAfterRemove.length === 0 && clearBtnDisabled) pass++;
+    else { fail++; console.error(`FAIL removing the filter row: ${rowsAfterRemove.length} rows left, clear-filters-btn.disabled=${clearBtnDisabled}`); }
+  } catch (e) {
+    fail += 3;
+    console.error('FAIL filter add/remove execution test threw', e);
+  }
+
+  // Mixed (N) cell expand/collapse: add the `guid` column, which is
+  // distinct across all 4 Fixtures components, landing in aggregateColumn's
+  // 'mixed' bucket for that tag group.
+  try {
+    const addColumnSelect = doc.getElementById('add-column-select');
+    addColumnSelect.value = 'guid';
+    addColumnSelect.dispatchEvent(new execDom.window.Event('change', { bubbles: true }));
+
+    const fixturesRow = [...doc.querySelectorAll('#component-table-body tr.component-row')].find((r) => r.firstChild.textContent === 'Fixtures');
+    const mixedCell = fixturesRow?.querySelector('.mixed-cell');
+    if (mixedCell && mixedCell.textContent === 'Mixed (4)') pass++;
+    else { fail++; console.error(`FAIL expected the Fixtures row's guid cell to read "Mixed (4)", got "${mixedCell?.textContent}"`); }
+
+    mixedCell.dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+    const expandedCell = [...doc.querySelectorAll('#component-table-body tr.component-row')]
+      .find((r) => r.firstChild.textContent === 'Fixtures')?.querySelector('.mixed-cell');
+    if (expandedCell && expandedCell.textContent === 'fixture-a, fixture-b, fixture-c, fixture-d') pass++;
+    else { fail++; console.error(`FAIL expanding the Mixed (4) cell: got "${expandedCell?.textContent}"`); }
+
+    // Clicking it again re-collapses it back to the summary form.
+    expandedCell.dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+    const collapsedCell = [...doc.querySelectorAll('#component-table-body tr.component-row')]
+      .find((r) => r.firstChild.textContent === 'Fixtures')?.querySelector('.mixed-cell');
+    if (collapsedCell && collapsedCell.textContent === 'Mixed (4)') pass++;
+    else { fail++; console.error(`FAIL re-collapsing the Mixed (4) cell: got "${collapsedCell?.textContent}"`); }
+
+    // A row click still fires from a normal cell in the same row — confirms
+    // stopPropagation() on the mixed-cell only suppresses the OWN clicks,
+    // not clicks elsewhere in the row (US-204 regression guard).
+    selectionCalls.length = 0;
+    fixturesRow.dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+    const fixturesCall = selectionCalls[selectionCalls.length - 1];
+    if (fixturesCall && fixturesCall.entities.length === 4) pass++;
+    else { fail++; console.error('FAIL clicking the Fixtures row (outside the mixed cell) did not select all 4 fixtures', fixturesCall); }
+  } catch (e) {
+    fail += 4;
+    console.error('FAIL Mixed (N) expand/collapse execution test threw', e);
+  }
+
+  // Empty "no components match" state, then restore to a clean filter set.
+  try {
+    doc.getElementById('add-filter-btn').dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+    const row = doc.querySelector('#filters-list .filter-row');
+    const textInput = row.querySelector('.filter-text');
+    textInput.value = 'no-such-tag-value';
+    textInput.dispatchEvent(new execDom.window.Event('input', { bubbles: true }));
+
+    const table = doc.getElementById('component-table');
+    const emptyState = doc.getElementById('empty-state');
+    if (table.hidden === true && emptyState.hidden === false) pass++;
+    else { fail++; console.error(`FAIL empty state: table.hidden=${table.hidden}, empty-state.hidden=${emptyState.hidden}`); }
+
+    const footerText = doc.getElementById('footer-summary').textContent;
+    if (footerText.includes('0 of 7 components match')) pass++;
+    else { fail++; console.error(`FAIL empty-state footer summary: got "${footerText}"`); }
+
+    doc.getElementById('clear-filters-btn').dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
+    if (table.hidden === false && emptyState.hidden === true) pass++;
+    else { fail++; console.error(`FAIL table did not return after "Clear all": table.hidden=${table.hidden}, empty-state.hidden=${emptyState.hidden}`); }
+  } catch (e) {
+    fail += 3;
+    console.error('FAIL empty-state execution test threw', e);
   }
 } catch (e) {
   fail += 3;

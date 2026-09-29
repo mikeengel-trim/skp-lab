@@ -109,7 +109,7 @@ sketchup-component-table/
 ├── icon.svg             # extension + command icon
 └── verify/               # pure-logic + DOM sanity tests
     ├── verify.mjs         # imports logic.js directly, 34 assertions
-    ├── verify-dom.mjs      # loads the real index.html/app.js into jsdom, 43 assertions
+    ├── verify-dom.mjs      # loads the real index.html/app.js into jsdom, 58 assertions
     └── package.json
 ```
 
@@ -151,7 +151,7 @@ grouping (Untagged sentinel, sort order), row-to-model selection's
 detection, and column aggregation (empty/sum/single/list/mixed, including the
 `Mixed (N)` threshold and its expand-on-demand formatting).
 
-`verify-dom.mjs` (43 assertions) loads the real shipped `index.html` into
+`verify-dom.mjs` (58 assertions) loads the real shipped `index.html` into
 jsdom and confirms every element id `app.js` looks up actually exists in the
 markup, starting UI state (banners hidden, Refresh disabled, empty
 containers), plus regression guards: this extension makes no model-mutating
@@ -162,18 +162,36 @@ ObserverHandle method-name mistake `sketchup-tag-color-viewer`'s own history
 already caught once (its `JSA_API_COMPLETE.md` reference claims `.end()`;
 the real object exposes `.stop()`/`.endStream()`).
 
-Unlike every other check in this file, the click-to-select test (US-204)
-actually **executes** the real shipped `app.js` inside jsdom rather than
-only regex-checking its source: it sets the handful of bare globals `app.js`
-touches (`document`/`window`/`localStorage`/`SketchUpApi`/`Option`) to a
-mocked model (3 mock `ComponentInstance`s across two tags, `getTagManager`/
-`getMaterials`/`entities.get`/`updateSelection` all stubbed), waits for the
-app's own `init()` to finish its walk and initial render, then dispatches a
-real `click` event on a rendered row and asserts `model.updateSelection` was
-called with exactly that row's entities and `mode: 'set'` — and that
-clicking a different row replaces the selection rather than adding to it.
-This is possible here specifically because the Selection API is trivially
-mockable, unlike the WebGL/Three.js dependency that keeps every *other*
+Unlike those checks (which only regex-check `app.js`'s source), the second
+half of the file actually **executes** the real shipped `app.js` inside
+jsdom: it sets the handful of bare globals `app.js` touches (`document`/
+`window`/`localStorage`/`SketchUpApi`/`Option`) to a mocked model (7 mock
+`ComponentInstance`s across three tags, `getTagManager`/`getMaterials`/
+`entities.get`/`updateSelection` all stubbed), waits for the app's own
+`init()` to finish its walk and initial render, then drives it with real
+simulated DOM events for the rest of one continuous "session" (app.js only
+runs its module-level setup once per process, so every scenario below reuses
+the same loaded instance rather than re-importing):
+- **Click-to-select (US-204):** a real `click` on a rendered row asserts
+  `model.updateSelection` was called with exactly that row's entities and
+  `mode: 'set'`, and that clicking a different row replaces rather than
+  adds to the selection.
+- **Column picker (US-205):** adding a column via `add-column-select`,
+  reordering it with a chip's move-left button, and removing it via its ✕.
+- **Filter rows (US-205):** adding a filter row (asserting its default
+  field/match-type), then removing it.
+- **Mixed (N) expand/collapse (US-205):** a column with 4 distinct values
+  within one tag group renders `Mixed (4)`; clicking it expands to the full
+  comma-joined list, clicking again collapses it back — and a click
+  elsewhere in the same row still selects it in the model, confirming the
+  mixed-cell's `stopPropagation()` only suppresses its own click.
+- **Empty "no components match" state (US-205):** a filter matching no
+  components hides the table and shows the empty-state message with the
+  right footer count; "Clear all" brings the table back.
+
+This execution approach is possible here specifically because the mocked
+JSA calls (Selection, tag/material lookups, the tree walk) are all trivially
+stubbable, unlike the WebGL/Three.js dependency that keeps every *other*
 extension's own `verify-dom.mjs` from executing its script at all.
 
 **Not covered, and why:** the live `SketchUpApi.connect()` handshake and

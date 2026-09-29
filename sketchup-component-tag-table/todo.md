@@ -78,10 +78,14 @@ Sample prompt to kickoff work by claude based on the Todo.md
 **Context:** `verify/verify.mjs` (pure logic — filtering, grouping, aggregation) currently carries the bulk of test assertions, while `verify/verify-dom.mjs` (which loads the real `index.html`/`app.js` into `jsdom`, per `README.md`'s Layout section) has only a couple of assertions. That leaves the actual UI wiring — adding/removing filter rows, toggling columns, rendering the Mixed (N) expand/collapse interaction, the "no components match" empty state — effectively untested.
 
 #### Acceptance Criteria
-- [ ] **Coverage Audit:** Identify the DOM-facing behaviors currently untested (at minimum: adding/removing a filter row, adding/removing/reordering a column, the Mixed (N) expand-to-full-list click, and the empty "no components match" state) and list them explicitly in the PR description.
-- [ ] **New Assertions:** Add `jsdom`-based assertions in `verify/verify-dom.mjs` for each behavior identified above.
-- [ ] **No Regressions:** Existing assertions in both `verify.mjs` and `verify-dom.mjs` continue to pass unmodified (unless a genuine bug is found and fixed, in which case note it separately).
-- [ ] **Test Pipeline:** `npm test` inside `/verify` passes with 0 failures.
+- [x] **Coverage Audit:** Identify the DOM-facing behaviors currently untested (at minimum: adding/removing a filter row, adding/removing/reordering a column, the Mixed (N) expand-to-full-list click, and the empty "no components match" state) and list them explicitly in the PR description.
+  - Untested before this story: column add/reorder/remove, filter row add/remove (and its default field/match-type), the Mixed (N) expand-to-full-list click (and re-collapse), the empty "no components match" state (and recovery via "Clear all"). All four now covered — see below.
+  - Also added as a bonus regression guard while building these: a click elsewhere in a row with a Mixed cell still fires row-to-model selection (US-204), confirming the mixed-cell's `stopPropagation()` doesn't over-suppress.
+- [x] **New Assertions:** Add `jsdom`-based assertions in `verify/verify-dom.mjs` for each behavior identified above.
+  - Unlike the rest of the file (regex/string checks against `app.js`'s source), these actually execute the real shipped `app.js` in jsdom against a mocked model and drive it with real simulated DOM events (clicks, select/input changes) — see `verify-dom.mjs`'s own comments and `README.md`'s Verification section.
+- [x] **No Regressions:** Existing assertions in both `verify.mjs` and `verify-dom.mjs` continue to pass unmodified (unless a genuine bug is found and fixed, in which case note it separately).
+  - No bugs found in this story itself, but fixing US-204→main's merge (see the "Restore US-204 code silently dropped..." commit) was a prerequisite: the earlier merge had silently dropped `getSelectionEntities` from `logic.js`, its import in `verify.mjs`, and the row-click wiring/`.component-row` styling from `app.js`/`style.css` — none of it caused a merge conflict, so it went unnoticed until `npm test` was run against `main` directly.
+- [x] **Test Pipeline:** `npm test` inside `/verify` passes with 0 failures.
 
 ### [US-206] Expand Built-In Fields (Transform, Size, Area, and Others), Including Sub-Attributes
 * **As a** Developer and Extension User
