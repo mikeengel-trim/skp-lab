@@ -466,7 +466,8 @@ function appendAggregatedCells(row, groupComponents, numericByColumn, cellKeyPre
     if (summary.type === 'mixed') {
       cell.classList.add('mixed-cell');
       cell.title = summary.values.join(', ');
-      cell.addEventListener('click', () => {
+      cell.addEventListener('click', (e) => {
+        e.stopPropagation(); // expand/collapse only — don't also trigger the row's select-in-model click
         if (expandedCells.has(cellKey)) expandedCells.delete(cellKey);
         else expandedCells.add(cellKey);
         renderTable();
@@ -516,6 +517,9 @@ function renderTable() {
     if (!groupByDefinition) {
       const row = document.createElement('tr');
       if (group.tagLabel === UNTAGGED_LABEL) row.classList.add('untagged-row');
+      row.classList.add('component-row');
+      row.title = 'Click to select these components in the model';
+      row.addEventListener('click', () => selectRowInModel(group.components));
 
       row.appendChild(td(group.tagLabel));
       row.appendChild(td(String(group.components.length), 'count-cell'));
@@ -531,8 +535,10 @@ function renderTable() {
     group.subgroups.forEach((sub, subIndex) => {
       subgroupCount += 1;
       const row = document.createElement('tr');
-      row.classList.add('definition-subrow');
+      row.classList.add('definition-subrow', 'component-row');
       if (group.tagLabel === UNTAGGED_LABEL) row.classList.add('untagged-row');
+      row.title = 'Click to select these components in the model';
+      row.addEventListener('click', () => selectRowInModel(sub.components));
 
       row.appendChild(td(subIndex === 0 ? group.tagLabel : ''));
       row.appendChild(td(sub.definitionLabel));

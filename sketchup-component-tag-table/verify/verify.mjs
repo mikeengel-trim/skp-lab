@@ -18,6 +18,7 @@ import {
   componentMatchesFilters,
   filterComponents,
   groupComponentsByTag,
+  getSelectionEntities,
   MISSING_DEFINITION_LABEL,
   isNumericValue,
   isFieldNumeric,
