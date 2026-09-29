@@ -118,15 +118,18 @@ Sample prompt to kickoff work by claude based on the Todo.md
 * **So that** I can build a table once for a specific review purpose (e.g. "Untagged Audit", "Door Schedule") and come back to it in a later session without reconfiguring columns and filters from scratch.
 
 **Relationship to existing auto-save (do not silently conflict with it):** `app.js` already auto-saves the *current, unnamed* working state (`columns`/`filters`) to `localStorage` under a single `STORAGE_KEY` via `loadState()`/`saveState()`, and restores it automatically on open — see `app.js:138-164`. This story adds *named, explicitly-saved* configurations on top of that; it does not replace it. Decide and document: does the auto-restored "last session" state remain a separate, unnamed "current" slot alongside the named saved list, or does opening the extension always land on the last-*selected* named table (if any) instead of the raw last-edited state? Either is defensible — pick one and note the reasoning, don't leave it ambiguous in the implementation.
+- **Resolved:** kept separate — the auto-restored unnamed "current" state keeps being what's restored on open, unchanged; named configs are a fully separate `localStorage` key/list you explicitly save to and load from. See `README.md`'s PRD decisions table.
 
 #### Acceptance Criteria
-- [ ] **Save Action:** Add a "Save table as..." action that prompts for a name and stores the current columns, active filters, and (if landed) grouping mode as a named entry, persisted in `localStorage` (a new key/structure, e.g. a list of `{ id, name, columns, filters, groupingMode, savedAt }`, separate from the existing single auto-save `STORAGE_KEY`).
-- [ ] **Overwrite Existing:** Saving under a name that already exists prompts for confirmation before overwriting rather than silently creating a duplicate or silently overwriting.
-- [ ] **Rename / Delete:** Users can rename and delete a previously saved table configuration.
-- [ ] **Scope:** Saved configurations persist per browser profile (`localStorage`), matching the existing persistence scope for columns/filters noted in `README.md` — not synced across devices/sessions.
-- [ ] **Advanced Attribute Fields Missing on Load:** If a saved configuration references an Advanced Attribute column/filter field that isn't discovered in the currently-open model (per `README.md`'s note that Advanced Attribute fields are discovered live while walking the tree), loading it degrades gracefully — the missing field is dropped or shown as unavailable rather than crashing the table.
-- [ ] **Test Coverage:** `verify/verify.mjs` and/or `verify/verify-dom.mjs` cover: saving a configuration, overwrite confirmation, rename, delete, and loading a configuration that references a since-removed Advanced Attribute field.
-- [ ] **Test Pipeline:** `npm test` inside `/verify` passes with 0 failures.
+- [x] **Save Action:** Add a "Save table as..." action that prompts for a name and stores the current columns, active filters, and (if landed) grouping mode as a named entry, persisted in `localStorage` (a new key/structure, e.g. a list of `{ id, name, columns, filters, groupingMode, savedAt }`, separate from the existing single auto-save `STORAGE_KEY`).
+  - The "prompt" is an inline text input built into the toolbar (not a native `window.prompt()`) — this repo has already hit two separate cases of a standard browser API behaving unexpectedly inside the JSA webview (`crypto.randomUUID()`, `ObserverHandle.end()`), so native dialogs were avoided as an unnecessary risk when an inline row does the same job with the exact same pattern already used for filter rows.
+- [x] **Overwrite Existing:** Saving under a name that already exists prompts for confirmation before overwriting rather than silently creating a duplicate or silently overwriting.
+- [x] **Rename / Delete:** Users can rename and delete a previously saved table configuration.
+- [x] **Scope:** Saved configurations persist per browser profile (`localStorage`), matching the existing persistence scope for columns/filters noted in `README.md` — not synced across devices/sessions.
+- [x] **Advanced Attribute Fields Missing on Load:** If a saved configuration references an Advanced Attribute column/filter field that isn't discovered in the currently-open model (per `README.md`'s note that Advanced Attribute fields are discovered live while walking the tree), loading it degrades gracefully — the missing field is dropped or shown as unavailable rather than crashing the table.
+  - `logic.js`'s `pruneMissingFields(config, knownFieldIds)` drops any column/filter referencing an unknown field and falls the group-by field back to `tag` (always known) if that's what's missing.
+- [x] **Test Coverage:** `verify/verify.mjs` and/or `verify/verify-dom.mjs` cover: saving a configuration, overwrite confirmation, rename, delete, and loading a configuration that references a since-removed Advanced Attribute field.
+- [x] **Test Pipeline:** `npm test` inside `/verify` passes with 0 failures.
 
 ### [US-208] Dropdown to Select and Load a Saved Table Configuration
 * **As an** Extension User
@@ -136,13 +139,15 @@ Sample prompt to kickoff work by claude based on the Todo.md
 **Depends on US-207** (the saved-configuration storage this dropdown reads from and writes the "currently selected" pointer to).
 
 #### Acceptance Criteria
-- [ ] **Dropdown UI:** Add a dropdown (near the existing column picker/filter controls) listing every saved table configuration by name, sorted in a sensible order (e.g. most-recently-saved or alphabetical — pick one and document it).
-- [ ] **Load on Select:** Selecting an entry replaces the current columns, filters, and grouping mode with the saved configuration's values and re-renders the table immediately.
-- [ ] **Unsaved-Changes Handling:** If the user has made changes since the last save/load and switches to a different saved configuration (or a "Current (unsaved)" option, if that concept exists per US-207's open question), decide and document whether unsaved changes are silently discarded, confirmed with a prompt, or auto-saved back — don't leave this undefined.
-- [ ] **Empty State:** If no configurations have been saved yet, the dropdown reflects that clearly (e.g. disabled with placeholder text, or hidden until at least one exists) rather than showing an empty/broken list.
-- [ ] **Stays in Sync:** Renaming, deleting, or saving a new configuration (US-207) updates the dropdown's contents without requiring a reload of the extension window.
-- [ ] **Test Coverage:** `verify/verify-dom.mjs` covers: populating the dropdown from saved configurations, selecting an entry loads its columns/filters, and the empty-state rendering.
-- [ ] **Test Pipeline:** `npm test` inside `/verify` passes with 0 failures.
+- [x] **Dropdown UI:** Add a dropdown (near the existing column picker/filter controls) listing every saved table configuration by name, sorted in a sensible order (e.g. most-recently-saved or alphabetical — pick one and document it).
+  - Alphabetical, case-insensitive (`logic.js`'s `sortSavedConfigs`) — documented in `README.md`'s PRD decisions table as an explicit choice over most-recently-saved.
+- [x] **Load on Select:** Selecting an entry replaces the current columns, filters, and grouping mode with the saved configuration's values and re-renders the table immediately.
+- [x] **Unsaved-Changes Handling:** If the user has made changes since the last save/load and switches to a different saved configuration (or a "Current (unsaved)" option, if that concept exists per US-207's open question), decide and document whether unsaved changes are silently discarded, confirmed with a prompt, or auto-saved back — don't leave this undefined.
+  - **Resolved:** silently discarded, no confirmation prompt — this extension has never had an "unsaved changes" concept anywhere else in its UI (everything already auto-saves on every edit). See `README.md`'s PRD decisions table.
+- [x] **Empty State:** If no configurations have been saved yet, the dropdown reflects that clearly (e.g. disabled with placeholder text, or hidden until at least one exists) rather than showing an empty/broken list.
+- [x] **Stays in Sync:** Renaming, deleting, or saving a new configuration (US-207) updates the dropdown's contents without requiring a reload of the extension window.
+- [x] **Test Coverage:** `verify/verify-dom.mjs` covers: populating the dropdown from saved configurations, selecting an entry loads its columns/filters, and the empty-state rendering.
+- [x] **Test Pipeline:** `npm test` inside `/verify` passes with 0 failures.
 
 ### [US-209] Calculated Columns from a User-Defined Formula
 * **As an** Extension User

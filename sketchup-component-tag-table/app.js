@@ -24,6 +24,8 @@ import {
   isFieldNumeric,
   aggregateColumn,
   formatColumnCell,
+  sortSavedConfigs,
+  pruneMissingFields,
 } from './logic.js';
 
 // ─── Model walk ─────────────────────────────────────────────────────────
@@ -149,8 +151,11 @@ function defaultState() {
   // just the group-by field + Count on first open, without presuming which
   // Advanced Attributes (if any) a given model actually has. `groupByField`
   // defaults to 'tag' — same v1 behavior as before US-210/US-211, just no
-  // longer the only option.
-  return { columns: ['definitionName'], filters: [], groupByDefinition: false, groupByField: 'tag' };
+  // longer the only option. `selectedConfigId` is just which saved table
+  // (if any) is currently highlighted in the US-208 dropdown — a cosmetic
+  // pointer, not the source of truth for what's loaded (see the "Relates
+  // to existing auto-save" decision below).
+  return { columns: ['definitionName'], filters: [], groupByDefinition: false, groupByField: 'tag', selectedConfigId: null };
 }
 
 function loadState() {
@@ -164,6 +169,7 @@ function loadState() {
       filters: parsed.filters,
       groupByDefinition: !!parsed.groupByDefinition,
       groupByField: typeof parsed.groupByField === 'string' && parsed.groupByField ? parsed.groupByField : 'tag',
+      selectedConfigId: typeof parsed.selectedConfigId === 'string' ? parsed.selectedConfigId : null,
     };
   } catch (e) {
     console.warn('[Component Table] could not read saved state, using defaults', e);
@@ -173,13 +179,48 @@ function loadState() {
 
 function saveState() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ columns, filters, groupByDefinition, groupByField }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ columns, filters, groupByDefinition, groupByField, selectedConfigId }));
   } catch (e) {
     console.warn('[Component Table] could not save state', e);
   }
 }
 
-let { columns, filters, groupByDefinition, groupByField } = loadState();
+// ─── Named saved table configurations (US-207/US-208) ───────────────────
+//
+// Deliberately a SEPARATE localStorage key/structure from STORAGE_KEY above,
+// per US-207's own "Relationship to existing auto-save" question: the
+// existing auto-save (columns/filters/grouping under STORAGE_KEY) is the
+// raw, unnamed "current" working state, and it keeps being what's restored
+// whenever the extension reopens — unchanged from before this story.
+// Named configurations are a separate, explicit, opt-in list you save to
+// and load from at any time via the US-208 dropdown; `selectedConfigId`
+// above only tracks which one is currently highlighted there, purely for
+// UI continuity (e.g. so Rename/Delete know what they're acting on) — it's
+// never what decides what loads when the extension starts.
+const SAVED_CONFIGS_KEY = 'component-table:saved-configs:v1';
+
+function loadSavedConfigs() {
+  try {
+    const raw = localStorage.getItem(SAVED_CONFIGS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    console.warn('[Component Table] could not read saved table configurations', e);
+    return [];
+  }
+}
+
+function saveSavedConfigs() {
+  try {
+    localStorage.setItem(SAVED_CONFIGS_KEY, JSON.stringify(savedConfigs));
+  } catch (e) {
+    console.warn('[Component Table] could not save table configurations', e);
+  }
+}
+
+let { columns, filters, groupByDefinition, groupByField, selectedConfigId } = loadState();
+let savedConfigs = loadSavedConfigs();
 // Grows over the session as collectComponents discovers Advanced
 // Attributes actually present in the model. Seeded with the always-
 // available built-ins so every picker has options even before the first
@@ -485,6 +526,212 @@ el('group-by-definition-toggle').addEventListener('change', (e) => {
   renderTable();
 });
 
+// ─── Saved table configurations (US-207/US-208) ─────────────────────────
+
+// Shared inline UI for both the "Save table as…"/Rename name-input and the
+// Overwrite/Delete confirmations — one small reused row instead of a
+// separate widget per action, appended into the fixed #saved-config-inline
+// container already in index.html.
+function showInlineNameInput({ initialValue, submitLabel, onSubmit }) {
+  const container = el('saved-config-inline');
+  container.innerHTML = '';
+  container.hidden = false;
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'saved-config-name-input';
+  input.placeholder = 'Table name…';
+  input.value = initialValue || '';
+
+  const errorText = document.createElement('span');
+  errorText.className = 'saved-config-error';
+
+  const submitBtn = document.createElement('button');
+  submitBtn.className = 'btn-add';
+  submitBtn.textContent = submitLabel;
+  submitBtn.addEventListener('click', () => {
+    const name = input.value.trim();
+    errorText.textContent = '';
+    if (!name) { errorText.textContent = 'Enter a name.'; return; }
+    onSubmit(name, errorText);
+  });
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'btn-link';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.addEventListener('click', hideSavedConfigInline);
+
+  container.append(input, submitBtn, cancelBtn, errorText);
+  input.focus();
+}
+
+function showInlineConfirm({ message, confirmLabel, onConfirm }) {
+  const container = el('saved-config-inline');
+  container.innerHTML = '';
+  container.hidden = false;
+
+  const text = document.createElement('span');
+  text.className = 'saved-config-confirm-text';
+  text.textContent = message;
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.className = 'btn-add';
+  confirmBtn.textContent = confirmLabel;
+  confirmBtn.addEventListener('click', () => { onConfirm(); hideSavedConfigInline(); });
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'btn-link';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.addEventListener('click', hideSavedConfigInline);
+
+  container.append(text, confirmBtn, cancelBtn);
+}
+
+function hideSavedConfigInline() {
+  const container = el('saved-config-inline');
+  container.hidden = true;
+  container.innerHTML = '';
+}
+
+// Rebuilds the US-208 dropdown from `savedConfigs` (US-208's "Stays in
+// Sync" criterion — called after every save/rename/delete) and the
+// Rename/Delete buttons' enabled state. Empty-state: disabled with
+// placeholder text rather than a blank/broken list (US-208).
+function renderSavedConfigsSelect() {
+  const select = el('saved-configs-select');
+  select.innerHTML = '';
+  if (savedConfigs.length === 0) {
+    select.disabled = true;
+    select.appendChild(new Option('No saved tables yet', ''));
+  } else {
+    select.disabled = false;
+    select.appendChild(new Option('— Select a saved table —', ''));
+    for (const config of sortSavedConfigs(savedConfigs)) {
+      select.appendChild(new Option(config.name, config.id));
+    }
+  }
+  const hasSelection = Boolean(selectedConfigId) && savedConfigs.some((c) => c.id === selectedConfigId);
+  select.value = hasSelection ? selectedConfigId : '';
+  el('rename-config-btn').disabled = !hasSelection;
+  el('delete-config-btn').disabled = !hasSelection;
+}
+
+function currentConfigValues() {
+  return {
+    columns: [...columns],
+    filters: filters.map((f) => ({ ...f })),
+    groupByField,
+    groupByDefinition,
+  };
+}
+
+function createSavedConfig(name) {
+  const config = { id: makeId('config'), name, ...currentConfigValues(), savedAt: new Date().toISOString() };
+  savedConfigs.push(config);
+  saveSavedConfigs();
+  selectedConfigId = config.id;
+  saveState();
+  renderSavedConfigsSelect();
+}
+
+function overwriteSavedConfig(id, name) {
+  const config = savedConfigs.find((c) => c.id === id);
+  if (!config) return;
+  Object.assign(config, { name, ...currentConfigValues(), savedAt: new Date().toISOString() });
+  saveSavedConfigs();
+  selectedConfigId = id;
+  saveState();
+  renderSavedConfigsSelect();
+}
+
+// Loading a saved configuration silently replaces the current working
+// state (US-208's "Unsaved-Changes Handling" decision: silently discard,
+// no confirmation prompt) — this extension has never had an "unsaved
+// changes" concept anywhere else in its UI (columns/filters already
+// auto-save on every edit), so introducing a dirty-tracking/confirm flow
+// only for this one dropdown would be an inconsistent, disproportionate
+// addition; "Save table as…" is always one click away first if a user
+// wants to keep their current setup under a name before switching.
+function loadSavedConfig(id) {
+  const config = savedConfigs.find((c) => c.id === id);
+  if (!config) return;
+  const pruned = pruneMissingFields(config, knownFields.map((f) => f.id));
+  columns = pruned.columns;
+  filters = pruned.filters;
+  groupByField = pruned.groupByField;
+  groupByDefinition = !!pruned.groupByDefinition;
+  saveState();
+  renderColumnsBar();
+  renderFilters();
+  renderGroupByFieldSelect();
+  updateGroupByDefinitionLabel();
+  el('group-by-definition-toggle').checked = groupByDefinition;
+  renderTable();
+}
+
+el('saved-configs-select').addEventListener('change', (e) => {
+  const id = e.target.value;
+  selectedConfigId = id || null;
+  saveState();
+  if (id) loadSavedConfig(id);
+  renderSavedConfigsSelect();
+});
+
+el('save-config-btn').addEventListener('click', () => {
+  showInlineNameInput({
+    initialValue: '',
+    submitLabel: 'Save',
+    onSubmit: (name) => {
+      const existing = savedConfigs.find((c) => c.name === name);
+      if (existing) {
+        showInlineConfirm({
+          message: `A table named "${name}" already exists. Overwrite it?`,
+          confirmLabel: 'Overwrite',
+          onConfirm: () => overwriteSavedConfig(existing.id, name),
+        });
+        return;
+      }
+      createSavedConfig(name);
+      hideSavedConfigInline();
+    },
+  });
+});
+
+el('rename-config-btn').addEventListener('click', () => {
+  if (!selectedConfigId) return;
+  const current = savedConfigs.find((c) => c.id === selectedConfigId);
+  if (!current) return;
+  showInlineNameInput({
+    initialValue: current.name,
+    submitLabel: 'Rename',
+    onSubmit: (name, errorText) => {
+      const collision = savedConfigs.find((c) => c.name === name && c.id !== current.id);
+      if (collision) { errorText.textContent = `A table named "${name}" already exists.`; return; }
+      current.name = name;
+      saveSavedConfigs();
+      renderSavedConfigsSelect();
+      hideSavedConfigInline();
+    },
+  });
+});
+
+el('delete-config-btn').addEventListener('click', () => {
+  if (!selectedConfigId) return;
+  const current = savedConfigs.find((c) => c.id === selectedConfigId);
+  if (!current) return;
+  showInlineConfirm({
+    message: `Delete "${current.name}"?`,
+    confirmLabel: 'Delete',
+    onConfirm: () => {
+      savedConfigs = savedConfigs.filter((c) => c.id !== current.id);
+      saveSavedConfigs();
+      selectedConfigId = null;
+      saveState();
+      renderSavedConfigsSelect();
+    },
+  });
+});
+
 // ─── Table rendering ────────────────────────────────────────────────────
 
 // Renders one aggregated-column cell into `row`, wiring up the Mixed (N)
@@ -733,6 +980,7 @@ renderColumnsBar();
 renderFilters();
 renderGroupByFieldSelect();
 updateGroupByDefinitionLabel();
+renderSavedConfigsSelect();
 
 async function init() {
   try {

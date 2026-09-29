@@ -84,6 +84,26 @@ model's content.
   group the same way the primary blank bucket sorts last overall. Both the
   group-by field and this toggle's state persist across sessions the same
   way columns do (`localStorage`, this browser profile).
+- **Save named table configurations and switch between them** (US-207/
+  US-208). A "Saved Tables" toolbar lets you "Save table as…" — capturing
+  the current columns, filters, group-by field, and second-level toggle
+  under a name — and a dropdown next to it lists every saved table so you
+  can jump back to, say, "Untagged Audit" or "Door Schedule" in one click.
+  Saving under a name that already exists asks to confirm before
+  overwriting; Rename/Delete act on whichever saved table is currently
+  selected in the dropdown. This is entirely separate from the existing
+  auto-saved *unnamed* working state (still the columns/filters/grouping
+  you land on when the extension reopens, unchanged from before this
+  story) — named configurations are an explicit, opt-in list layered on
+  top, not a replacement for it. Loading a saved table **silently replaces**
+  whatever you currently have configured — there's no "unsaved changes"
+  prompt, consistent with the rest of this extension never having had that
+  concept either (columns/filters already auto-save on every edit); use
+  "Save table as…" first if you want to keep your current setup under a
+  name before switching. If a saved table references an Advanced Attribute
+  field the currently-open model hasn't discovered, loading it drops that
+  column/filter (and falls the group-by field back to Tag, if that's what's
+  missing) instead of crashing.
 
 ## PRD decisions made for v1
 
@@ -101,6 +121,8 @@ resolved for this build:
 | Grouping: multi-value/highly-variable field values (US-211 open question) | **Bucket by exact string value** — identical to how Tag grouping already worked, just generalized | Consistent with how this extension already buckets Tag and Definition Name; a different scheme (e.g. tokenizing free text) would be a bigger, separate feature. |
 | Grouping: numeric fields (US-211 open question) | **Allowed, bucketed by exact value** — not disallowed in the UI | Numeric fields are more naturally *summed* as a column than grouped, but disallowing grouping by them would be an arbitrary restriction the underlying mechanism doesn't need; a user grouping by a mostly-unique numeric field just gets a lot of small buckets, same as grouping by GUID would. |
 | Grouping: relationship to the two-level "→ Definition Name" toggle (US-211 open question) | **The second level stays fixed to Definition Name**, layered on top of whichever field is chosen as the primary group-by | US-211's own notes considered making the second level generic too ("any field → any field"), but that's a materially bigger feature (a second field picker, its own blank-bucket/sort rules, etc.) than "generalize the *first* level" — kept as a possible future story rather than scope-creeping this one. |
+| Named configs vs. the existing auto-save (US-207 open question) | **Both, kept separate**: the raw auto-saved unnamed "current" state still restores on open exactly as before; named configurations are an additional, explicitly-saved/loaded list on top, under their own `localStorage` key | Replacing the auto-restored "last session" state with "always land on the last-selected named table" would be a real behavior change for every existing user with zero named tables saved yet; keeping them independent needed no migration and matches how columns/filters already auto-save transparently. |
+| Unsaved changes when switching saved tables (US-208 open question) | **Silently discarded, no confirmation prompt** | This extension has never had an "unsaved changes" concept anywhere in its UI — columns/filters/grouping already auto-save on every single edit — so adding a dirty-tracking/confirm flow only for this one dropdown would be an inconsistent, disproportionate addition; "Save table as…" is always available first. |
 | Nested components (open question 3) | **Counted individually**, not rolled into their parent, keyed by each component's own tag | A nested sub-component can carry a different tag than its parent assembly; collapsing that away would hide exactly the kind of tagging inconsistency this tool exists to surface. |
 | Hidden components/tags (open question 4) | **Counted** — visibility is not read at all | This is an inventory/QA tool; a component that's merely hidden in the current view is still part of the model's contents. |
 | Column persistence scope (story 24) | **Per browser profile** (`localStorage`), not per model or per scene | Matches every other extension in this repo's own persistence choice (Instance Color Rules' rules, this extension's own filters). Does not sync across devices/sessions. |
@@ -118,8 +140,8 @@ sketchup-component-table/
 ├── app.js              # model walk (JSA calls) + DOM wiring; imports logic.js
 ├── icon.svg             # extension + command icon
 └── verify/               # pure-logic + DOM sanity tests
-    ├── verify.mjs         # imports logic.js directly, 47 assertions
-    ├── verify-dom.mjs      # loads the real index.html/app.js into jsdom, 67 assertions
+    ├── verify.mjs         # imports logic.js directly, 52 assertions
+    ├── verify-dom.mjs      # loads the real index.html/app.js into jsdom, 88 assertions
     └── package.json
 ```
 
@@ -153,18 +175,20 @@ npm install
 npm test
 ```
 
-`verify.mjs` (47 assertions) covers field id encode/decode, attribute
+`verify.mjs` (52 assertions) covers field id encode/decode, attribute
 flattening/merging, filter matching (all four match types, non-string value
 coercion), the OR-within-field/AND-across-field filter combination, generic
 field grouping (`groupComponentsByField` — the Tag-preserving `Untagged`
 bucket, a non-Tag built-in field, an Advanced Attribute field, the generic
 `(blank)` bucket, and the `→ Definition Name` second level composing with
 any of those — US-210/US-211), row-to-model selection's
-`getSelectionEntities` helper (US-204), numeric-value/numeric-field
-detection, and column aggregation (empty/sum/single/list/mixed, including the
-`Mixed (N)` threshold and its expand-on-demand formatting).
+`getSelectionEntities` helper (US-204), saved-table-configuration helpers
+`sortSavedConfigs`/`pruneMissingFields` (US-207/US-208), numeric-value/
+numeric-field detection, and column aggregation (empty/sum/single/list/
+mixed, including the `Mixed (N)` threshold and its expand-on-demand
+formatting).
 
-`verify-dom.mjs` (67 assertions) loads the real shipped `index.html` into
+`verify-dom.mjs` (88 assertions) loads the real shipped `index.html` into
 jsdom and confirms every element id `app.js` looks up actually exists in the
 markup, starting UI state (banners hidden, Refresh disabled, empty
 containers), plus regression guards: this extension makes no model-mutating
@@ -205,6 +229,16 @@ scenario below reuses the same loaded instance rather than re-importing):
   column option; switching the "Group by" picker to Material re-groups the
   table, relabels the header/footer away from "Tag", and a row click still
   selects the right components for that non-Tag grouping.
+- **Saved table configurations (US-207/US-208):** a config seeded straight
+  into the mocked `localStorage` *before* `app.js` is imported (referencing
+  an Advanced Attribute field this session never discovers) shows up in the
+  dropdown without crashing; the full "Save table as…" → overwrite-
+  confirmation → Rename → Delete flow runs through the same inline UI;
+  loading a saved config discards an unsaved column change (the decided
+  "silently discard" behavior); loading the config with the missing field
+  drops it and falls the group-by field back to Tag rather than crashing;
+  and deleting every saved config leaves the dropdown in its documented
+  empty state.
 
 This execution approach is possible here specifically because the mocked
 JSA calls (Selection, tag/material lookups, the tree walk) are all trivially
