@@ -145,7 +145,7 @@ Sample prompt to kickoff work by claude based on the Todo.md
       runtime), the dropdown falls back to today's static `BUNDLED_THEMES`
       list rather than ending up empty.
 
-- [ ] **US-109: "Add Spaces by Theme" button**
+- [x] **US-109: "Add Spaces by Theme" button**
   As a user setting up a new building, I want a button that reads the
   selected theme's `spaces` entries and places an actual tagged space (box)
   for each one — not just creates the department tags — so that I get a
@@ -188,7 +188,7 @@ Sample prompt to kickoff work by claude based on the Todo.md
       (e.g., "Added 5 tags and 12 spaces from theme."), and `loadTags()` is
       re-run so the Tag dropdown reflects any newly created tags.
 
-- [ ] **US-110: Pick a single space from the theme instead of typing one in**
+- [x] **US-110: Pick a single space from the theme instead of typing one in**
   As a user who wants just one space from the theme (not the whole bulk
   add from US-109), I want a dropdown listing every space defined in the
   selected theme, so that choosing one pre-fills the form instead of me

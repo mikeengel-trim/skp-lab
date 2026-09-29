@@ -51,6 +51,23 @@ model. Lives in the Sidebar.
   (the original approach) risked being silently blocked in the SketchUp
   sidebar webview, since a `<select>` changing isn't a gesture on the file
   input.
+- **"Add Spaces by Theme"** does everything "Add Tags by Theme" does, plus
+  actually builds a tagged box (via the same `buildSpace()` used by the
+  regular Place Space flow) for every entry in each department's `spaces`
+  array — a department with no `spaces` still gets its tag, just no space.
+  A space's `targetArea` (free text like `"650 NSF"` or `"25,200 GSF"`) is
+  parsed down to a square-footage number and turned into a square footprint
+  (`side = sqrt(area)`, converted to inches); a `count` places that many
+  copies, spaced out the same way the regular Count/Spacing placement does.
+  A space whose `targetArea` doesn't parse is skipped (and named in the
+  final status) rather than failing the whole click.
+- The **Space** dropdown (below Theme) lists every parseable space in the
+  selected theme, grouped by department, and pre-fills Name/Width/Depth/
+  Count from picking one — using the same `targetArea` derivation as "Add
+  Spaces by Theme" — plus the matching Tag if that department's tag already
+  exists in this model. Every field stays editable afterward; this only
+  pre-fills the existing Place Space flow, `placeSpaces()` itself is
+  unchanged. "Custom…" (the default) leaves the form untouched.
 
 ## Themes
 

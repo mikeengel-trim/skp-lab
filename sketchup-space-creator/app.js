@@ -36,9 +36,11 @@ const status = document.getElementById('status');
 const placeButton = document.getElementById('place');
 const addTagsByThemeButton = document.getElementById('add-tags-by-theme');
 const themeSelect = document.getElementById('theme-select');
+const spaceSelect = document.getElementById('space-select');
 const themeFileInput = document.getElementById('theme-file-input');
 const chooseThemeFileButton = document.getElementById('choose-theme-file');
 const themeHint = document.getElementById('theme-hint');
+const addSpacesByThemeButton = document.getElementById('add-spaces-by-theme');
 
 let count = 1;
 
@@ -63,6 +65,14 @@ function feetAndInchesToInches(feetField, inchesField) {
   const feet = Number(feetField.value) || 0;
   const inches = Number(inchesField.value) || 0;
   return feet * INCHES_PER_FOOT + inches;
+}
+
+// Inverse of feetAndInchesToInches, for pre-filling Width/Depth from a
+// theme space's derived footprint (US-110).
+function setFeetAndInches(feetField, inchesField, totalInches) {
+  const rounded = Math.round(totalInches);
+  feetField.value = String(Math.floor(rounded / INCHES_PER_FOOT));
+  inchesField.value = String(rounded % INCHES_PER_FOOT);
 }
 
 function updateButtons() {
@@ -158,6 +168,32 @@ async function ensureIfc4SchemaLoaded(model, operation) {
     await operation.modelLoadSchemaFromUrl(IFC4_SCHEMA_URL);
   }
 }
+
+// A theme space's targetArea is free text ("650 NSF", "25,200 GSF", "1,500
+// SF") — extracts the leading numeric square-footage value, stripping comma
+// thousands separators and a trailing unit. Returns undefined for anything
+// that isn't a clean positive number, which callers treat as "unparsable".
+function parseTargetAreaSqFt(targetArea) {
+  if (typeof targetArea !== 'string') return undefined;
+  const match = targetArea.match(/^\s*([\d,]+(?:\.\d+)?)\s*(?:NSF|GSF|SF)?\s*$/i);
+  if (!match) return undefined;
+  const value = Number(match[1].replace(/,/g, ''));
+  return Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+// A theme space specifies an area, not a width/depth pair — this app has no
+// other basis to prefer one aspect ratio over another, so it uses a square
+// footprint: side = sqrt(area). Converts sq ft to sq in (12x12 per sq ft)
+// before the square root, since the rest of this app works in inches.
+function squareFootprintFromArea(areaSqFt) {
+  const sideInches = Math.sqrt(areaSqFt * INCHES_PER_FOOT * INCHES_PER_FOOT);
+  return { width: sideInches, depth: sideInches };
+}
+
+// Theme-driven placement (US-109) has no single form-level spacing input to
+// draw from — each department's spaces are placed as their own row, so this
+// is just the gap between copies within one space entry and between rows.
+const DEFAULT_THEME_SPACING_IN = 24;
 
 // Places `count` copies of one space, each offset from the last along the
 // width axis by `width + spacing` — spacing of 0 (or count === 1) collapses
@@ -387,6 +423,9 @@ themeFileInput.addEventListener('change', async () => {
     uploadedTheme = { name: file.name, departments };
     themeSelect.value = CUSTOM_THEME_OPTION;
     themeHint.textContent = `Using uploaded theme: ${file.name}`;
+    // themeSelect.value was set programmatically above, which doesn't fire
+    // its own 'change' event, so the Space dropdown needs refreshing here.
+    void refreshSpaceOptions();
   } catch (error) {
     report(String(error), 'error');
   }
@@ -410,6 +449,7 @@ themeSelect.addEventListener('change', () => {
       console.warn('[Space Creator] could not save theme selection', error);
     }
   }
+  void refreshSpaceOptions();
 });
 
 chooseThemeFileButton.addEventListener('click', () => {
@@ -459,6 +499,147 @@ addTagsByThemeButton.addEventListener('click', () => {
   void addTagsByTheme();
 });
 
+// Does everything addTagsByTheme() does (same tag create-or-reuse-by-name +
+// color sync), plus builds an actual tagged space for every entry in each
+// department's `spaces` array — so this button alone, on a model with no
+// tags yet, ends up with the same tags addTagsByTheme() would have created.
+// A department with no `spaces` array still gets its tag, just no space.
+async function addSpacesByTheme() {
+  addSpacesByThemeButton.disabled = true;
+  try {
+    const departments = await loadSelectedTheme();
+    const model = await SketchUpApi.getActiveModel();
+    const height = feetAndInchesToInches(heightFt, heightIn);
+    const skippedSpaceNames = [];
+    let spacesPlaced = 0;
+
+    await model.performOperation(async operation => {
+      await ensureIfc4SchemaLoaded(model, operation);
+      const tagManager = await model.getTagManager();
+
+      // Each space entry gets its own row (offset along depth), so a
+      // department's whole space list reads as a grid rather than one long
+      // line; departments follow on from wherever the last one left off.
+      let originY = 0;
+
+      for (const department of departments) {
+        const tagRef = tagManager.getTagByName(department.name) ?? operation.createTag(department.name);
+        operation.tagSetColor(tagRef, SketchUpApi.Color.fromHex(department.color));
+
+        for (const space of department.spaces ?? []) {
+          const areaSqFt = parseTargetAreaSqFt(space.targetArea);
+          if (areaSqFt === undefined) {
+            skippedSpaceNames.push(space.name ?? '(unnamed space)');
+            continue;
+          }
+
+          const { width, depth } = squareFootprintFromArea(areaSqFt);
+          const spaceCount = typeof space.count === 'number' && space.count > 0 ? space.count : 1;
+
+          await placeSpacedCopies(operation, {
+            width,
+            depth,
+            height,
+            spacing: DEFAULT_THEME_SPACING_IN,
+            count: spaceCount,
+            baseName: space.name,
+            tagRef,
+            originY,
+          });
+
+          spacesPlaced += spaceCount;
+          originY += depth + DEFAULT_THEME_SPACING_IN;
+        }
+      }
+    }, 'Add spaces by theme');
+
+    await loadTags();
+    let message = `Added ${departments.length} tag${departments.length === 1 ? '' : 's'} and ${spacesPlaced} space${spacesPlaced === 1 ? '' : 's'} from theme.`;
+    if (skippedSpaceNames.length > 0) {
+      message += ` Skipped (unparsable target area): ${skippedSpaceNames.join(', ')}.`;
+    }
+    report(message, 'ok');
+  } catch (error) {
+    report(String(error), 'error');
+  } finally {
+    addSpacesByThemeButton.disabled = false;
+  }
+}
+
+addSpacesByThemeButton.addEventListener('click', () => {
+  void addSpacesByTheme();
+});
+
+// Populates the Space dropdown from the currently selected theme's spaces,
+// grouped by department. A space whose targetArea doesn't parse (see
+// parseTargetAreaSqFt) is left out entirely rather than offered as a
+// selection that can't actually pre-fill Width/Depth.
+const CUSTOM_SPACE_OPTION = 'custom';
+let spaceOptionsIndex = new Map(); // option value -> { departmentName, space }
+
+async function refreshSpaceOptions() {
+  spaceOptionsIndex = new Map();
+  spaceSelect.replaceChildren(new Option('Custom…', CUSTOM_SPACE_OPTION));
+
+  let departments;
+  try {
+    departments = await loadSelectedTheme();
+  } catch {
+    // No usable theme selected yet (e.g. "Upload JSON file…" with nothing
+    // uploaded) — leave just "Custom…", not an error state of its own.
+    return;
+  }
+
+  let nextOptionId = 0;
+  for (const department of departments) {
+    const spaces = (department.spaces ?? []).filter(space => parseTargetAreaSqFt(space.targetArea) !== undefined);
+    if (spaces.length === 0) continue;
+
+    const optgroup = document.createElement('optgroup');
+    optgroup.label = department.name;
+    for (const space of spaces) {
+      const value = String(nextOptionId++);
+      spaceOptionsIndex.set(value, { departmentName: department.name, space });
+      optgroup.append(new Option(space.name, value));
+    }
+    spaceSelect.append(optgroup);
+  }
+}
+
+// Pre-fills the form from a theme space — a convenience on top of the
+// existing fields, not a separate placement path. Every field stays
+// editable afterward, and placeSpaces() itself is unchanged.
+function applySpaceSelection({ departmentName, space }) {
+  nameInput.value = space.name;
+
+  const areaSqFt = parseTargetAreaSqFt(space.targetArea);
+  const { width, depth } = squareFootprintFromArea(areaSqFt);
+  setFeetAndInches(widthFt, widthIn, width);
+  setFeetAndInches(depthFt, depthIn, depth);
+
+  if (typeof space.count === 'number') {
+    setCount(space.count);
+  }
+
+  const tagAlreadyExists = [...tagSelect.options].some(option => option.value === departmentName);
+  if (tagAlreadyExists) {
+    tagSelect.value = departmentName;
+  } else {
+    tagSelect.value = '';
+    report(`"${departmentName}" isn't a tag in this model yet — use "Add Tags by Theme" to create it.`);
+  }
+
+  updateButtons();
+  void checkDuplicateName();
+}
+
+spaceSelect.addEventListener('change', () => {
+  const entry = spaceOptionsIndex.get(spaceSelect.value);
+  // "Custom…" (or any unrecognized value) leaves the form exactly as-is.
+  if (!entry) return;
+  applySpaceSelection(entry);
+});
+
 // Register before connecting so reopening/refocusing the sidebar re-runs
 // this and picks up tags added while it was last shown.
 SketchUpApi.ui.on('open', () => {
@@ -469,6 +650,7 @@ SketchUpApi.connect()
   .then(async () => {
     await populateThemeSelect();
     restoreLastTheme();
+    await refreshSpaceOptions();
     await loadTags();
     updateButtons();
     report('Ready.', 'ok');
