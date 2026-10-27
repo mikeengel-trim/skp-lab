@@ -9,7 +9,6 @@ at runtime; shared knowledge lives in [docs/](docs).
 
 | Folder | Extension | Status |
 |---|---|---|
-| [`sketchup-hello-world/`](sketchup-hello-world) | Hello World | Done |
 | [`sketchup-space-creator/`](sketchup-space-creator) | Space Creator | Done |
 | [`sketchup-tag-color-viewer/`](sketchup-tag-color-viewer) | Instance Color Rules | Done |
 | [`sketchup-north-arrow/`](sketchup-north-arrow) | North Arrow | Untested in a live SketchUp session — see its README |
@@ -41,4 +40,5 @@ the hard way (loading, connecting, testing).
 
 - [JSA documentation (Trimble Developer)](https://developer.trimble.com/docs/sketchup/jsa/welcome/) — welcome, tutorials, examples, and API reference.
 - [JSA API documentation](https://d38s2ymumupq87.cloudfront.net/sketchup/jsa/latest/) — the SketchUp JavaScript Adapter reference.
+- [JSA example extensions](https://github.com/SketchUp/sketchup-js-api-tutorials/tree/main/examples) — official samples: hello-world, menu-items, toolbar-headless, modal-form, sidebar-panel, server-hosted.
 - [docs/RESOURCES.md](docs/RESOURCES.md) — summary of the above for context.

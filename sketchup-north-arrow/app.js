@@ -99,6 +99,8 @@ const arrowEl = document.getElementById('arrow');
 
 let northAngleDegrees = 0; // ShadowInfo.northAngle; refreshed on load and on model changes
 let model = null;
+let cameraHandle = null;
+let modelWatchHandle = null;
 
 function applyRotation(camera) {
   const degrees = computeArrowRotationDegrees(camera, northAngleDegrees);
@@ -123,7 +125,7 @@ async function refreshNorthAngle() {
 // arrow track "in real time" as the user moves the view.
 function startCameraStream() {
   try {
-    model.view.observeCamera((camera) => applyRotation(camera));
+    cameraHandle = model.view.observeCamera((camera) => applyRotation(camera));
   } catch (e) {
     console.error('[North Arrow] could not start camera stream', e);
   }
@@ -138,7 +140,7 @@ function startCameraStream() {
 let modelChangeTimer = null;
 function startModelChangeWatch() {
   try {
-    SketchUpApi.observeActiveModel(() => {
+    modelWatchHandle = SketchUpApi.observeActiveModel(() => {
       if (modelChangeTimer) clearTimeout(modelChangeTimer);
       modelChangeTimer = setTimeout(refreshNorthAngle, 500);
     });
@@ -163,5 +165,14 @@ async function init() {
     console.error('[North Arrow] connection failed', e);
   }
 }
+
+// Stop both observers and release the connection when the page goes away,
+// same as the other extensions' beforeunload cleanup.
+window.addEventListener('beforeunload', () => {
+  if (modelChangeTimer) clearTimeout(modelChangeTimer);
+  cameraHandle?.stop?.();
+  modelWatchHandle?.stop?.();
+  SketchUpApi.disconnect();
+});
 
 init();

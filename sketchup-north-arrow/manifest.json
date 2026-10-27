@@ -5,6 +5,7 @@
   "description": "A compass overlay in the lower-right corner of the viewport that rotates in real time to keep pointing at the model's true north as you orbit. No settings — it opens itself and just works.",
   "version": "1.0.0",
   "creator": "",
+  "baseUrl": "/",
   "mainFile": "index.html",
   "icon": "north-arrow.png",
   "loadAtLaunch": true,

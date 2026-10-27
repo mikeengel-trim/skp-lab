@@ -570,7 +570,8 @@ origin-placement fix got that far.
   `JSA_RECIPES.md`, `JSA_MANIFEST.md` (shared across this workspace's JSA
   extensions).
 - `Sketchup.js` — fetched directly from
-  `https://d38s2ymumupq87.cloudfront.net/sketchup/jsa/latest/js/Sketchup.js`
+  `https://cdn.habitat.sketchup.com/dist/sketchup-js-api/v2/sketchup-js-api.min.js`
+  (previously the CloudFront `.../latest/js/Sketchup.js` build; switched to the v2 CDN SDK the JSA example extensions use)
   for the `Transformation`/`Vertex`/`EdgeUse` details above.
 - [earcut](https://github.com/mapbox/earcut) — polygon triangulation with
   holes.
