@@ -82,8 +82,8 @@ check('northVectorFromAngle(0) points along +Y', () => {
   approxEqual(n.x, 0, 'x'); approxEqual(n.y, 1, 'y'); approxEqual(n.z, 0, 'z');
 });
 
-check('northVectorFromAngle(PI/2) is a unit vector in the XY plane', () => {
-  const n = northVectorFromAngle(Math.PI / 2);
+check('northVectorFromAngle(90) is a unit vector in the XY plane', () => {
+  const n = northVectorFromAngle(90);
   approxEqual(n.z, 0, 'z stays 0 — north is always a ground-plane direction');
   approxEqual(Math.hypot(n.x, n.y), 1, 'stays unit length');
 });
@@ -100,12 +100,12 @@ check('top view, north == +Y: arrow bearing is 0°', () => {
 });
 
 check('top view, north rotated 90° (== +X by NORTH_ANGLE_SIGN convention): arrow bearing is 90°', () => {
-  const deg = computeArrowRotationDegrees(TOP_VIEW, Math.PI / 2);
+  const deg = computeArrowRotationDegrees(TOP_VIEW, 90);
   approxEqual(deg, 90, 'bearing');
 });
 
 check('top view, north pointing -Y: arrow bearing is 180°', () => {
-  const deg = computeArrowRotationDegrees(TOP_VIEW, Math.PI);
+  const deg = computeArrowRotationDegrees(TOP_VIEW, 180);
   approxEqual(Math.abs(deg), 180, 'bearing magnitude');
 });
 
@@ -141,7 +141,7 @@ check('perspective view (forward not aligned with any world axis) never throws a
     target: { x: 0, y: 0, z: 0 },
     up: { x: 0, y: 0, z: 1 },
   };
-  const deg = computeArrowRotationDegrees(camera, 0.35);
+  const deg = computeArrowRotationDegrees(camera, 20);
   assert.ok(Number.isFinite(deg), `expected a finite bearing, got ${deg}`);
 });
 

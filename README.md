@@ -39,4 +39,6 @@ the hard way (loading, connecting, testing).
 
 ## Resources
 
+- [JSA documentation (Trimble Developer)](https://developer.trimble.com/docs/sketchup/jsa/welcome/) — welcome, tutorials, examples, and API reference.
 - [JSA API documentation](https://d38s2ymumupq87.cloudfront.net/sketchup/jsa/latest/) — the SketchUp JavaScript Adapter reference.
+- [docs/RESOURCES.md](docs/RESOURCES.md) — summary of the above for context.
