@@ -175,9 +175,13 @@ the same debounced path rule-text edits already used.
 - **The view stays current on its own.** Live updates mean a colleague's
   edit, or your own change in the modeling window, shows up here without
   clicking anything.
-- **The model stays as it is.** Still read-only: no `op.*` call anywhere
-  in `index.html`. Materials, tags, styles, attributes and the active
-  scene are never touched.
+- **Your geometry stays as it is.** Materials, tags, styles, geometry and
+  the active scene are never touched. The one thing the extension writes
+  into the model is its own rule set (see "Rules saved in the model"
+  below), and only after you edit a rule — merely opening a model never
+  marks it as changed.
+- **Rules travel with the file.** They're stored inside the `.skp`, so they
+  come back when you reopen it, on any device.
 - **Runs on Web, Desktop and iPad** — unchanged from the tag-based
   version's fix for the original Ruby prototype's Desktop-only limitation.
 
@@ -240,7 +244,7 @@ never fire.
 
 ## JSA APIs used
 
-Read-only, confirmed either from `JSA_API_COMPLETE.md`
+Geometry access is read-only (the one write is the rule set — last two rows), confirmed either from `JSA_API_COMPLETE.md`
 (`sketchup-speckle-connector/agent/`) or, where that table was silent or
 this project needed more certainty, directly from the shipped SDK source
 (`Sketchup.js`, fetched from the CDN it's loaded from):
@@ -260,6 +264,8 @@ this project needed more certainty, directly from the shipped SDK source
 | `Group`/`ComponentInstance` `.guid` / `.description` | the **GUID** / **Description** fields |
 | `ComponentDefinition.name` | the **Definition Name** field (`Group` has none — no shared definition) |
 | `entity.attributes.allDictionaries` | every **Advanced Attribute** on an instance or definition |
+| `model.attributes.findValue(dict, key, {default})` | **read** the stored rule set off the model (confirmed from SDK source) |
+| `model.performOperation(fn, name)` + `op.modelSetAttribute(path, key, value)` | **write** the rule set into the model — the extension's only write (confirmed from SDK source; **not yet run in a live SketchUp session**) |
 | `Group.transform` / `ComponentInstance.transform` | local→parent transform, composed down the tree — **not** `.transformation`, see below |
 
 Tag and Material are back as *filterable fields* — they're read again
@@ -425,6 +431,50 @@ never themed. Checked in a browser for the chrome, toggle and persistence;
 the 3D scene with real geometry in light mode has not been seen in a live
 SketchUp session.
 
+### Rules saved in the model
+
+Rules and the Else color/visibility are also stored **inside the `.skp`**,
+in a model-level attribute dictionary — `InstanceColorRules`, key `config`
+— so they come back across sessions and devices.
+
+- **Format.** One JSON string, defined by a JSON Schema (draft 2020-12):
+  [`schema/instance-color-rules.schema.json`](schema/instance-color-rules.schema.json),
+  with a worked example in [`schema/example.json`](schema/example.json).
+  Top level: `schemaVersion` (`1`), `rules[]`, `else`. Each rule has `id`,
+  `field` (`{kind:"builtin", id}` or `{kind:"attribute", dictionary, key}`),
+  `match`, `text`, `color` (`#rrggbb`), `visible`. In memory a field is a
+  single encoded string so it can be a `<select>` value; it's converted at
+  the storage boundary only (`fieldIdToStored`/`fieldIdFromStored`).
+- **Write path.** `model.performOperation` → `op.modelSetAttribute`, one
+  undo step named "Save color rules", debounced 1 s after the last edit so
+  typing in a rule's text box doesn't create an undo entry per keystroke.
+  Nothing is written until the user edits something.
+- **Read path.** Every model read (first load, Refresh, live tick) reads
+  `model.attributes.findValue(...)` off the model object already in hand.
+  If the stored string changed (undo of a save, another session, a
+  different document becoming active) the rule list is replaced; pending
+  local edits win over a stale stored copy.
+- **Precedence.** Rules stored in the model beat `localStorage`. A model
+  with none keeps the in-memory rules (restored from `localStorage` —
+  "the rules you used last") until the first edit writes them into it.
+- **Reading is tolerant, writing is strict.** The schema describes exactly
+  what is written. `parseConfig` salvages every valid rule and skips the
+  rest (a notice says how many), so one bad entry never blanks the view.
+  Duplicate rule ids are regenerated.
+- **Never clobbers a newer file.** A `schemaVersion` greater than this
+  extension knows is treated as read-only: a notice is shown and edits are
+  not saved to the model.
+- **Own-write live tick.** A write bumps the model revision, which would
+  trigger a full re-read; the revision our write produced is remembered and
+  that one tick skipped. If that identification ever fails the only cost is
+  one redundant re-read.
+- **If saving fails** (e.g. a host that doesn't support model attributes)
+  a notice says the rules are kept in this browser only, and the footer
+  shows the storage state ("Rules stored in this model" / "Saving to
+  model…" / "Not saved to model — browser only").
+
+`localStorage` remains the always-available local copy:
+
 Both rules and the Else color/visibility persist to `localStorage`
 (`instance-color-rules:v1`) so they survive closing and reopening the
 panel. They do **not** sync across devices or SketchUp sessions — this is
@@ -441,6 +491,16 @@ specifically so this stays true even when colors collide.
 ---
 
 ## Verification
+
+**`verify/verify-config.mjs`** (46 assertions) covers the stored format:
+the schema (compiled with Ajv, draft 2020-12, strict mode) accepts the
+example and rejects bad colors, unknown match types/fields, missing
+attribute keys, wrong versions, extra properties and so on;
+`serializeConfig` output validates against the schema for a range of states
+(including attribute names containing `::`); `parseConfig` round-trips it
+and agrees with the schema on valid vs. invalid documents; and its
+tolerance (dropped rules, duplicate ids, defaults, `newer-version`) is
+pinned. `npm test` in `verify/` runs all three scripts.
 
 **`verify/verify.mjs`** extracts the file's `PURE-LOGIC-BEGIN`…
 `PURE-LOGIC-END` region straight out of the shipped `index.html` (regex on
@@ -561,6 +621,14 @@ origin-placement fix got that far.
   (color/texture) is not read or shown.
 - Stops at 1,500,000 triangles and says so (`MAX_TRIANGLES`).
 - Read-only: no selection linkage back to SketchUp.
+- **Rule storage in the model is not yet verified in a live SketchUp
+  session.** `modelSetAttribute`/`model.attributes` come from reading the
+  SDK source, and the load/save/skip-own-tick logic was exercised against a
+  mock model in a browser, not against SketchUp itself. To confirm on a
+  device: edit a rule, save the model, reopen it, and check the rules come
+  back with "Rules stored in this model" in the footer.
+- Rules are per model, not shared between models: a model with none saved
+  starts from the rules last used in this browser.
 - Live updates are debounced 500ms and re-walk the *entire* model on every
   tick — fine for typical editing, but a very large model edited
   continuously (e.g. a live drag) will feel like it catches up every half

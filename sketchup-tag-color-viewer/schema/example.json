@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "rules": [
+    { "id": "rule-1", "field": { "kind": "builtin", "id": "name" }, "match": "contains", "text": "Installed", "color": "#2f6fed", "visible": true },
+    { "id": "rule-2", "field": { "kind": "attribute", "dictionary": "AssemblyParts", "key": "status" }, "match": "equals", "text": "Removed", "color": "#e5484d", "visible": false }
+  ],
+  "else": { "color": "#9aa0ab", "visible": true }
+}

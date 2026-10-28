@@ -3,9 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node verify.mjs && node verify-dom.mjs"
+    "test": "node verify.mjs && node verify-dom.mjs && node verify-config.mjs"
   },
   "devDependencies": {
+    "ajv": "^8.17.0",
     "earcut": "2.2.4",
     "jsdom": "^24.0.0"
   }

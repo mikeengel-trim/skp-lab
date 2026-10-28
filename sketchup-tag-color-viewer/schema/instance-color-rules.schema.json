@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:skp-lab:instance-color-rules:config:1",
+  "title": "Instance Color Rules configuration",
+  "description": "Rule set stored in the SketchUp model's InstanceColorRules attribute dictionary (key: config).",
+  "type": "object",
+  "required": ["schemaVersion", "rules", "else"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "rules": {
+      "description": "Evaluated top to bottom; the first match at the nearest level wins.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/rule" }
+    },
+    "else": {
+      "description": "Appearance of geometry that matches no rule.",
+      "type": "object",
+      "required": ["color", "visible"],
+      "additionalProperties": false,
+      "properties": {
+        "color": { "$ref": "#/$defs/hexColor" },
+        "visible": { "type": "boolean" }
+      }
+    }
+  },
+  "$defs": {
+    "hexColor": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+    "field": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "id"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "builtin" },
+            "id": { "enum": ["name", "tag", "material", "definitionName", "guid", "description"] }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "dictionary", "key"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "attribute" },
+            "dictionary": { "type": "string", "minLength": 1 },
+            "key": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "rule": {
+      "type": "object",
+      "required": ["id", "field", "match", "text", "color", "visible"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "field": { "$ref": "#/$defs/field" },
+        "match": { "enum": ["contains", "equals", "startsWith", "endsWith"] },
+        "text": { "type": "string" },
+        "color": { "$ref": "#/$defs/hexColor" },
+        "visible": { "type": "boolean" }
+      }
+    }
+  }
+}

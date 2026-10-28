@@ -6,7 +6,8 @@
 
   <!--
     Instance Color Rules — JSA extension rendering the active model in a
-    movable, read-only window, colored by user-defined rules matched
+    movable window (geometry is read-only; the only thing it ever writes
+    into the model is its own rule set), colored by user-defined rules matched
     against a field YOU pick per rule — any built-in property (Name, Tag,
     Material, Definition Name, GUID, Description) or any Advanced
     Attribute set on a component's definition or a specific instance —
@@ -132,8 +133,15 @@
     }
     @keyframes livePulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
-    .banner {
+    /* Banners stack in one container so several can show at once without
+       overlapping; the container ignores pointer events so it never blocks
+       an OrbitControls drag, the banners themselves (close buttons) do not. */
+    .banners {
       position: absolute; top: 44px; left: 14px; right: 14px;
+      display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+    }
+    .banner {
+      pointer-events: auto;
       display: flex; align-items: flex-start; gap: 10px;
       padding: 10px 12px; border-radius: var(--radius-md);
       font-size: 12.5px; line-height: 1.5;
@@ -243,6 +251,9 @@
       padding: 10px 16px; border-top: 1px solid var(--c-border);
       color: var(--c-text-tertiary); font-size: 11.5px;
     }
+    .rules-storage { margin-top: 4px; }
+    .rules-storage.saved { color: var(--c-live); }
+    .rules-storage.warn { color: var(--c-warn); }
   </style>
 </head>
 <body>
@@ -254,13 +265,19 @@
         <span class="live-indicator" id="live-indicator" hidden><span class="live-dot"></span>Live</span>
       </div>
 
-      <div class="banner banner-error" id="error-banner" hidden>
-        <span class="banner-text" id="error-banner-text"></span>
-        <span class="banner-close" id="error-banner-close">✕</span>
-      </div>
-      <div class="banner banner-warn" id="truncated-banner" hidden>
-        <span class="banner-text" id="truncated-banner-text"></span>
-        <span class="banner-close" id="truncated-banner-close">✕</span>
+      <div class="banners">
+        <div class="banner banner-error" id="error-banner" hidden>
+          <span class="banner-text" id="error-banner-text"></span>
+          <span class="banner-close" id="error-banner-close">✕</span>
+        </div>
+        <div class="banner banner-warn" id="truncated-banner" hidden>
+          <span class="banner-text" id="truncated-banner-text"></span>
+          <span class="banner-close" id="truncated-banner-close">✕</span>
+        </div>
+        <div class="banner banner-warn" id="notice-banner" hidden>
+          <span class="banner-text" id="notice-banner-text"></span>
+          <span class="banner-close" id="notice-banner-close">✕</span>
+        </div>
       </div>
 
       <div class="viewport-empty" id="viewport-empty">Connecting to SketchUp…</div>
@@ -289,19 +306,25 @@
           <input type="color" id="else-color" title="Color for anything no rule matches">
         </div>
 
-        <div class="rules-footer" id="rules-footer">—</div>
+        <div class="rules-footer" id="rules-footer">
+          <div id="rules-summary">—</div>
+          <div class="rules-storage" id="rules-storage"></div>
+        </div>
       </div>
     </div>
   </div>
 
   <script type="module">
 /**
- * Instance Color Rules — a movable, read-only JSA window that renders the
+ * Instance Color Rules — a movable JSA window (geometry read-only; it writes
+ * only its own rule set back into the model) that renders the
  * active model colored by user-defined rules, each matched against a
  * field the user picks — Name, Tag, Material, Definition Name, GUID,
  * Description, or any Advanced Attribute set on a component's definition
  * or a specific instance — beside the modeling view, without touching
- * materials, tags, styles, attributes or the active scene.
+ * materials, tags, styles, geometry or the active scene. Rules are stored in a
+ * model-level attribute dictionary so they persist in the .skp — see "Rules
+ * stored in the model" below and schema/instance-color-rules.schema.json.
  *
  * Inlined directly here, not a separate .js file, and init() at the bottom
  * of this script runs unconditionally with no DOMContentLoaded/load
@@ -621,6 +644,117 @@ function toThreeAxes(p) {
   return [p[0], p[2], -p[1]];
 }
 
+// ─── Stored configuration (rules saved inside the .skp) ─────────────────
+//
+// The rule set is persisted as ONE JSON string in a model-level attribute
+// dictionary, so it travels with the file across sessions and devices. Its
+// shape is defined by schema/instance-color-rules.schema.json (JSON Schema
+// draft 2020-12); verify/verify-config.mjs checks that what serializeConfig
+// writes validates against it, and that parseConfig agrees with it on
+// valid/invalid documents. The schema describes exactly what we WRITE
+// (strict); parseConfig is deliberately tolerant on READ — it salvages every
+// valid rule and drops the rest, so one corrupted entry never blanks the
+// view. In memory a rule's field is a single encoded string (see
+// encodeAttributeFieldId) so it can be a <select> value; stored, it's a
+// readable {kind, ...} object — converted at this boundary only.
+const CONFIG_SCHEMA_VERSION = 1;
+const CONFIG_DICTIONARY = 'InstanceColorRules';
+const CONFIG_KEY = 'config';
+const MATCH_TYPES = ['contains', 'equals', 'startsWith', 'endsWith'];
+const DEFAULT_ELSE_COLOR = '#9aa0ab';
+const FALLBACK_RULE_COLOR = '#808080';
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+
+function fieldIdToStored(fieldId) {
+  const attr = decodeAttributeFieldId(fieldId);
+  if (attr && attr.dict && attr.key) return { kind: 'attribute', dictionary: attr.dict, key: attr.key };
+  if (BUILTIN_FIELDS.some((f) => f.id === fieldId)) return { kind: 'builtin', id: fieldId };
+  return { kind: 'builtin', id: 'name' }; // same fallback the rule editor uses for an unknown field
+}
+
+// @returns the in-memory field id string, or null if `stored` isn't valid
+function fieldIdFromStored(stored) {
+  if (!stored || typeof stored !== 'object') return null;
+  if (stored.kind === 'builtin') {
+    return BUILTIN_FIELDS.some((f) => f.id === stored.id) ? stored.id : null;
+  }
+  if (stored.kind === 'attribute') {
+    if (typeof stored.dictionary !== 'string' || !stored.dictionary) return null;
+    if (typeof stored.key !== 'string' || !stored.key) return null;
+    return encodeAttributeFieldId(stored.dictionary, stored.key);
+  }
+  return null;
+}
+
+// Key order is fixed by construction, so two serializations of equal state
+// are byte-identical — callers compare the strings to detect "no change".
+function serializeConfig({ rules, elseColor, elseVisible }) {
+  return JSON.stringify({
+    schemaVersion: CONFIG_SCHEMA_VERSION,
+    rules: rules.map((r) => ({
+      id: String(r.id),
+      field: fieldIdToStored(r.field),
+      match: MATCH_TYPES.includes(r.matchType) ? r.matchType : 'contains',
+      text: typeof r.text === 'string' ? r.text : '',
+      color: HEX_COLOR.test(r.color) ? r.color : FALLBACK_RULE_COLOR,
+      visible: r.visible !== false,
+    })),
+    else: {
+      color: HEX_COLOR.test(elseColor) ? elseColor : DEFAULT_ELSE_COLOR,
+      visible: elseVisible !== false,
+    },
+  });
+}
+
+// @param raw — whatever the model attribute held (normally a JSON string)
+// @param makeId — () => string, used when a stored rule's id is missing or a duplicate
+// @returns { config, dropped, problem }
+//   config  — { rules, elseColor, elseVisible } in in-memory shape, or null
+//   dropped — how many stored rules were unusable and skipped
+//   problem — null | 'invalid' (unreadable) | 'newer-version' (written by a
+//             newer extension — callers must NOT overwrite it)
+function parseConfig(raw, makeId) {
+  const fail = (problem) => ({ config: null, dropped: 0, problem });
+  if (typeof raw !== 'string') return fail('invalid');
+  let doc;
+  try { doc = JSON.parse(raw); } catch (e) { return fail('invalid'); }
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return fail('invalid');
+  if (Number.isInteger(doc.schemaVersion) && doc.schemaVersion > CONFIG_SCHEMA_VERSION) return fail('newer-version');
+  if (doc.schemaVersion !== CONFIG_SCHEMA_VERSION || !Array.isArray(doc.rules)) return fail('invalid');
+
+  const rules = [];
+  const seenIds = new Set();
+  let dropped = 0;
+  for (const entry of doc.rules) {
+    const field = entry && typeof entry === 'object' ? fieldIdFromStored(entry.field) : null;
+    if (
+      field === null ||
+      !MATCH_TYPES.includes(entry.match) ||
+      typeof entry.text !== 'string' ||
+      !HEX_COLOR.test(entry.color) ||
+      (entry.visible !== undefined && typeof entry.visible !== 'boolean')
+    ) {
+      dropped += 1;
+      continue;
+    }
+    let id = typeof entry.id === 'string' && entry.id ? entry.id : null;
+    if (id === null || seenIds.has(id)) id = makeId();
+    seenIds.add(id);
+    rules.push({ id, field, matchType: entry.match, text: entry.text, color: entry.color, visible: entry.visible !== false });
+  }
+
+  const elseObj = doc.else && typeof doc.else === 'object' ? doc.else : {};
+  return {
+    config: {
+      rules,
+      elseColor: HEX_COLOR.test(elseObj.color) ? elseObj.color : DEFAULT_ELSE_COLOR,
+      elseVisible: elseObj.visible !== false,
+    },
+    dropped,
+    problem: null,
+  };
+}
+
 // ═════════════════════════════════════════════════════════════════════════
 // PURE-LOGIC-END
 // ═════════════════════════════════════════════════════════════════════════
@@ -628,8 +762,9 @@ function toThreeAxes(p) {
 // ─── Model walk — talks to the JSA API ─────────────────────────────────
 //
 // Read-only: every call below is a getter or a container's .entities.get()
-// accessor. There is no op.* call anywhere in this file, so materials,
-// tags, styles, attributes and the active scene are never touched.
+// accessor, so materials, tags, styles, attributes, geometry and the active
+// scene are never touched by the walk. (The extension's one write — saving
+// its own rule set — lives in writeRulesToModel, far below.)
 //
 // Only Model, Group and ComponentDefinition can hold children — a
 // ComponentInstance itself has none of that; you resolve its .definition
@@ -1021,12 +1156,17 @@ function loadState() {
   }
 }
 
+// Every rule/else edit funnels through here. localStorage is the immediate,
+// always-available copy (and the "last used" starting point for a model that
+// has no saved rules yet); the model copy is the durable, travels-with-the-
+// file one, written on a debounce — see scheduleModelSave.
 function saveState() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ rules, elseColor, elseVisible }));
   } catch (e) {
     console.warn('[Instance Color Rules] could not save rules', e);
   }
+  scheduleModelSave();
 }
 
 let { rules, elseColor, elseVisible } = loadState();
@@ -1050,6 +1190,21 @@ function showTruncated(message) {
   el('truncated-banner').hidden = false;
 }
 function clearTruncated() { el('truncated-banner').hidden = true; }
+
+// A separate banner from "truncated": clearTruncated() runs at the start of
+// every model read, which would otherwise wipe a storage warning each tick.
+function showNotice(message) {
+  el('notice-banner-text').textContent = message;
+  el('notice-banner').hidden = false;
+}
+function clearNotice() { el('notice-banner').hidden = true; }
+
+// kind: '' | 'saved' | 'warn'
+function setStorageStatus(text, kind) {
+  const line = el('rules-storage');
+  line.textContent = text;
+  line.className = 'rules-storage' + (kind ? ' ' + kind : '');
+}
 
 function setStatus(text, kind) {
   const pill = el('status-pill');
@@ -1094,6 +1249,23 @@ function populateFieldSelect(select) {
   }
 }
 
+// A rule restored from localStorage or the model can target an Advanced
+// Attribute that hasn't been discovered by a model walk yet (or no longer
+// exists in this model). Make sure each one has an option, so its picker
+// shows the real field instead of silently displaying "Name" while the rule
+// still matches on the attribute.
+function ensureRuleFieldsKnown() {
+  let added = false;
+  for (const rule of rules) {
+    const attr = decodeAttributeFieldId(rule.field);
+    if (attr && !knownFields.some((k) => k.id === rule.field)) {
+      knownFields.push({ id: rule.field, label: attributeFieldLabel(attr.dict, attr.key) });
+      added = true;
+    }
+  }
+  if (added) knownFields.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
+}
+
 // Merges newly-discovered Advanced Attribute fields into knownFields and,
 // only if anything new actually showed up, refreshes every existing rule
 // row's field picker in place — preserving each one's current selection.
@@ -1121,6 +1293,7 @@ function updateFieldOptions(discoveredFields) {
 // (add/remove rule, initial load), never on a keystroke: recreating the
 // currently-focused input would drop focus/cursor position mid-edit.
 function renderRulesList() {
+  ensureRuleFieldsKnown();
   const list = el('rules-list');
   list.innerHTML = '';
 
@@ -1342,7 +1515,7 @@ function updateCounts(groupBuckets) {
   const elseFaceCount = groupBuckets.get('else')?.faceCount || 0;
   el('else-count').textContent = `${elseFaceCount} face${elseFaceCount === 1 ? '' : 's'}`;
 
-  el('rules-footer').textContent =
+  el('rules-summary').textContent =
     `${rules.length} rule${rules.length === 1 ? '' : 's'} · ${totalTriangles.toLocaleString()} triangles`;
 }
 
@@ -1353,6 +1526,142 @@ let loading = false;
 let liveModelHandle = null;
 let liveUpdateTimer = null;
 const LIVE_UPDATE_DEBOUNCE_MS = 500;
+
+// ─── Rules stored in the model (.skp) ───────────────────────────────────
+//
+// Rules live in a model-level attribute dictionary (see "Stored
+// configuration" above for the format), so they come back whenever the file
+// is reopened. Reads are free — the model object we already hold carries its
+// attributes. Writes are the one place this extension mutates the model:
+// one performOperation per burst of edits, debounced so typing in a rule's
+// text box produces a single undo step ("Save color rules") rather than one
+// per keystroke. Nothing is written until the user actually edits something,
+// so merely opening a model never marks it as changed.
+//
+// Precedence on load: a rule set stored in the model wins over whatever is
+// in localStorage. A model with none keeps the in-memory rules (restored
+// from localStorage, i.e. "the rules you used last") until the first edit
+// writes them into that model.
+const MODEL_SAVE_DEBOUNCE_MS = 1000;
+let modelSaveTimer = null;
+let modelSaveTargetId = null; // the model the pending edits belong to
+let savingRules = false;
+let lastSyncedJson = null;    // the config JSON the model is known to hold (null = none)
+let syncedModelId = null;
+let saveBlocked = false;      // model holds a newer-version config: never overwrite it
+let lastOwnWriteRevision = null; // revision our own write produced, so its live-update tick can be skipped
+
+function scheduleModelSave() {
+  if (!model || saveBlocked) return;
+  modelSaveTargetId = model.id;
+  if (modelSaveTimer) clearTimeout(modelSaveTimer);
+  modelSaveTimer = setTimeout(writeRulesToModel, MODEL_SAVE_DEBOUNCE_MS);
+  setStorageStatus('Unsaved changes…', '');
+}
+
+async function writeRulesToModel() {
+  modelSaveTimer = null;
+  if (!model || saveBlocked) return;
+  if (model.id !== modelSaveTargetId) {
+    // The active document changed while edits were pending; writing them now
+    // would put one model's rules into another.
+    console.warn('[Instance Color Rules] active model changed before rules were saved; dropping pending save');
+    return;
+  }
+  if (savingRules) { scheduleModelSave(); return; } // one write at a time
+  const json = serializeConfig({ rules, elseColor, elseVisible });
+  if (json === lastSyncedJson) { setStorageStatus('Rules stored in this model', 'saved'); return; }
+
+  savingRules = true;
+  setStorageStatus('Saving to model…', '');
+  try {
+    await model.performOperation(async (op) => {
+      op.modelSetAttribute([CONFIG_DICTIONARY], CONFIG_KEY, json);
+    }, 'Save color rules');
+    lastSyncedJson = json;
+    try {
+      // Remember the revision our own write created, so the live-update tick
+      // it triggers doesn't re-walk and re-triangulate the whole model for a
+      // change that only touched the rule attribute.
+      const fresh = await model.refresh();
+      if (fresh) { model = fresh; lastOwnWriteRevision = fresh.revision; }
+    } catch (e) {
+      console.warn('[Instance Color Rules] could not refresh after saving; a redundant re-read may follow', e);
+    }
+    clearNotice();
+    setStorageStatus('Rules stored in this model', 'saved');
+  } catch (e) {
+    console.error('[Instance Color Rules] could not save rules into the model', e);
+    showNotice(`Could not save the rules into the model (${e.message}). They are kept in this browser only and won't travel with the file.`);
+    setStorageStatus('Not saved to model — browser only', 'warn');
+  } finally {
+    savingRules = false;
+  }
+}
+
+// Pushes loaded rules into the existing static controls and rule list.
+function applyConfigToUi() {
+  el('else-color').value = elseColor;
+  el('else-visible').checked = elseVisible !== false;
+  renderRulesList();
+}
+
+// Called on every model read (first load, Refresh, live ticks). Cheap in the
+// common case: the stored string is unchanged, so it returns immediately.
+function syncRulesFromModel(currentModel) {
+  if (currentModel.id !== syncedModelId) {
+    syncedModelId = currentModel.id;
+    lastSyncedJson = null;
+    saveBlocked = false;
+    lastOwnWriteRevision = null;
+  }
+
+  let raw = null;
+  try {
+    raw = currentModel.attributes.findValue(CONFIG_DICTIONARY, CONFIG_KEY, { default: null });
+  } catch (e) {
+    console.warn('[Instance Color Rules] could not read stored rules from the model', e);
+    return;
+  }
+
+  if (raw === null || raw === undefined) {
+    if (lastSyncedJson === null) setStorageStatus('Rules not stored in this model yet — edit a rule to save', 'warn');
+    return;
+  }
+  if (raw === lastSyncedJson) return;
+  // Local edits that haven't been written yet win; the pending save will
+  // overwrite the stored copy shortly.
+  if (modelSaveTimer || savingRules) return;
+
+  const { config, dropped, problem } = parseConfig(raw, makeRuleId);
+  if (problem === 'newer-version') {
+    saveBlocked = true;
+    lastSyncedJson = raw;
+    showNotice('This model\'s color rules were saved by a newer version of Instance Color Rules. Showing the rules from this browser instead; edits will not be saved to the model so the newer ones are not overwritten.');
+    setStorageStatus('Model rules are from a newer version — not saving', 'warn');
+    return;
+  }
+  if (problem) {
+    // Unreadable: keep what we have; the next edit will replace the bad value.
+    console.warn('[Instance Color Rules] stored rules in the model were unreadable; ignoring them');
+    lastSyncedJson = null;
+    setStorageStatus('Stored rules unreadable — edit a rule to replace them', 'warn');
+    return;
+  }
+
+  ({ rules, elseColor, elseVisible } = config);
+  lastSyncedJson = raw;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ rules, elseColor, elseVisible }));
+  } catch (e) { /* same opaque-origin caveat as saveState */ }
+  applyConfigToUi();
+  if (dropped > 0) {
+    showNotice(`${dropped} stored rule${dropped === 1 ? ' was' : 's were'} invalid and skipped.`);
+  } else {
+    clearNotice();
+  }
+  setStorageStatus('Rules stored in this model', 'saved');
+}
 
 // The shared "do the actual work" step: read whatever `model` currently
 // points at, walk it, recolor, render. Both the manual Refresh button and
@@ -1369,6 +1678,7 @@ async function readAndRenderModel() {
   try {
     el('model-name').textContent = model.name || 'Untitled model';
 
+    syncRulesFromModel(model);
     const geometry = await collectGeometryByAttributeChain(model);
     lastChainEntries = geometry.chainEntries;
     updateFieldOptions(geometry.availableFields);
@@ -1415,6 +1725,8 @@ async function loadAndRender() {
 // button.
 async function handleLiveModelChange(streamModel) {
   try {
+    // The tick caused by our own rules write: nothing geometric changed.
+    if (lastOwnWriteRevision !== null && streamModel.revision === lastOwnWriteRevision) return;
     model = await streamModel.getModel();
     await readAndRenderModel();
   } catch (e) {
@@ -1465,6 +1777,7 @@ function wireUi() {
   el('refresh-btn').addEventListener('click', loadAndRender);
   el('error-banner-close').addEventListener('click', clearError);
   el('truncated-banner-close').addEventListener('click', clearTruncated);
+  el('notice-banner-close').addEventListener('click', clearNotice);
   wireStaticRuleControls();
   renderRulesList();
   setPanelCollapsed(loadPanelCollapsed());

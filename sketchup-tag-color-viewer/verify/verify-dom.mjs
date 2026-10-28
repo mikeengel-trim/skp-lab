@@ -51,6 +51,8 @@ const assertions = [
   ['theme-toggle-btn exists', Boolean(document.getElementById('theme-toggle-btn')), true],
   ['page defaults to dark (no data-theme in static markup)', document.documentElement.hasAttribute('data-theme'), false],
   ['light theme CSS block present', /:root\[data-theme="light"\]/.test(html), true],
+  ['notice-banner starts hidden', document.getElementById('notice-banner').hasAttribute('hidden'), true],
+  ['rules-storage status line exists', Boolean(document.getElementById('rules-storage')), true],
   ['live-indicator starts hidden', document.getElementById('live-indicator').hasAttribute('hidden'), true],
   ['live-indicator names "Live"', document.getElementById('live-indicator').textContent.includes('Live'), true],
 ];
@@ -64,7 +66,7 @@ for (const [name, actual, expected] of assertions) {
 // updateCounts) are still worth confirming exist as *string literals* in
 // the script, since a typo there wouldn't show up any other way in a
 // harness that can't execute the script.
-const structuralStrings = ['dataset.ruleId', 'dataset.countFor', 'data-count-for', 'rule-field', 'instance-color-rules:theme', 'SCENE_THEMES'];
+const structuralStrings = ['dataset.ruleId', 'dataset.countFor', 'data-count-for', 'rule-field', 'instance-color-rules:theme', 'SCENE_THEMES', 'modelSetAttribute', 'performOperation'];
 for (const s of structuralStrings) {
   if (script.includes(s)) pass++;
   else { fail++; console.error(`FAIL expected string not found in script: ${s}`); }
