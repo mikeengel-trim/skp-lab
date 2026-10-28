@@ -205,7 +205,7 @@ try {
 
     doorsRow.dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
     const firstCall = selectionCalls[selectionCalls.length - 1];
-    if (firstCall && firstCall.mode === 'set' && firstCall.entities.length === 2 &&
+    if (firstCall && firstCall.mode === 'replace' && firstCall.entities.length === 2 &&
         firstCall.entities.includes(doorA) && firstCall.entities.includes(doorB)) {
       pass++;
     } else {
@@ -215,7 +215,7 @@ try {
 
     windowsRow.dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
     const secondCall = selectionCalls[selectionCalls.length - 1];
-    if (secondCall && secondCall.mode === 'set' && secondCall.entities.length === 1 && secondCall.entities[0] === windowA) {
+    if (secondCall && secondCall.mode === 'replace' && secondCall.entities.length === 1 && secondCall.entities[0] === windowA) {
       pass++;
     } else {
       fail++;
@@ -386,7 +386,7 @@ try {
   selectionCalls.length = 0;
   oakRow.dispatchEvent(new execDom.window.MouseEvent('click', { bubbles: true }));
   const oakCall = selectionCalls[selectionCalls.length - 1];
-  if (oakCall && oakCall.mode === 'set' && oakCall.entities.length === 2 &&
+  if (oakCall && oakCall.mode === 'replace' && oakCall.entities.length === 2 &&
       oakCall.entities.includes(doorA) && oakCall.entities.includes(doorB)) {
     pass++;
   } else {
