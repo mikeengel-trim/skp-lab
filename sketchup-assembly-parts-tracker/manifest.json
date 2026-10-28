@@ -1,0 +1,27 @@
+{
+  "manifestFormatVersion": "1.0.0",
+  "id": "assembly-parts-tracker",
+  "name": "Assembly Parts Tracker",
+  "description": "Table of every group/component in the model with editable part data; click a row to highlight the part in the model.",
+  "version": "1.0.0",
+  "creator": "",
+  "baseUrl": "/",
+  "mainFile": "index.html",
+  "window": {
+    "type": "floating",
+    "width": 1040,
+    "height": 620
+  },
+  "commands": {
+    "open": {
+      "title": "Assembly Parts Tracker",
+      "description": "Open the Assembly Parts Tracker."
+    }
+  },
+  "menuItems": [
+    {
+      "type": "item",
+      "commandId": "open"
+    }
+  ]
+}

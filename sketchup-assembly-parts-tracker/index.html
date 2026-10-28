@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Assembly Parts Tracker</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.habitat.sketchup.com/dist/sketchup-js-api/v2/sketchup-js-api.min.js"></script>
+</head>
+<body>
+  <main>
+    <header class="top">
+      <div>
+        <span class="overline">Assembly</span>
+        <h1>Assembly Parts Tracker</h1>
+        <p class="sub">Every group and component in the model. Select a row to highlight it in the model.</p>
+      </div>
+      <div class="progress">
+        <div class="progress-label"><strong>Installed</strong><span id="progress-text">0 of 0 parts</span></div>
+        <div class="bar"><div id="progress-fill"></div></div>
+      </div>
+    </header>
+
+    <div class="toolbar">
+      <div id="chips" class="chips"></div>
+      <label class="search">
+        <span>Search Parts</span>
+        <input id="search" type="search" placeholder="Part #, supplier, installer">
+      </label>
+      <button id="refresh" class="btn" type="button" disabled>Refresh</button>
+      <button id="seed" class="btn" type="button" disabled title="Fill empty parts with sample values for a demo">Fill demo data</button>
+    </div>
+
+    <p id="error" class="error" hidden></p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Unique ID</th><th>Part #</th><th>Material</th><th>Cut Length</th>
+            <th>Supplier</th><th>Installer</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <p id="empty" class="empty" hidden>No parts match this view.</p>
+    </div>
+
+    <footer><span id="footer">Connecting…</span></footer>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -13,6 +13,7 @@ at runtime; shared knowledge lives in [docs/](docs).
 | [`sketchup-tag-color-viewer/`](sketchup-tag-color-viewer) | Instance Color Rules | Done |
 | [`sketchup-north-arrow/`](sketchup-north-arrow) | North Arrow | Untested in a live SketchUp session — see its README |
 | [`sketchup-component-tag-table/`](sketchup-component-tag-table) | Component Tag Table | Untested in a live SketchUp session — see its README |
+| [`sketchup-assembly-parts-tracker/`](sketchup-assembly-parts-tracker) | Assembly Parts Tracker | Untested in a live SketchUp session — see its README |
 
 ## Adding a new extension
 
