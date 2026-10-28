@@ -1,7 +1,6 @@
 {
   "manifestFormatVersion": "1.0.0",
   "id": "tag-color-viewer",
-  "baseUrl": "/",
   "mainFile": "index.html",
   "name": "Instance Color Rules",
   "icon": "tag-color-viewer.svg",
