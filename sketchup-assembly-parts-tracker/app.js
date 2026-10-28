@@ -151,7 +151,7 @@ async function selectPart(part) {
   selectedId = part.id;
   for (const tr of el('rows').children) tr.classList.toggle('selected', tr.dataset.id === String(part.id));
   try {
-    await model.updateSelection([part.entity], 'set');
+    await model.updateSelection([part.entity], 'replace');
   } catch (e) {
     console.error('[Parts Tracker] select failed', e);
     showError(`Could not select the part in the model: ${e.message}`);

@@ -9,7 +9,7 @@ mock (Modus look, simplified); runs wherever JSA runs (Desktop, iPad, Web).
 
 - **Table** — Unique ID, Part #, Material, Cut Length, Supplier, Installer,
   Status. Status chips with counts, a search box, and an Installed progress bar.
-- **Row click → highlight** — `model.updateSelection([entity], 'set')`.
+- **Row click → highlight** — `model.updateSelection([entity], 'replace')`.
 - **Edits persist** — values are stored in the `AssemblyParts` attribute
   dictionary on each entity (`partNumber`, `material`, `cutLength`,
   `supplier`, `installer`, `status`), written inside `performOperation`

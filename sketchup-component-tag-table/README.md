@@ -75,7 +75,7 @@ model's content.
   push-notification pattern proven in Instance Color Rules — no clicking
   Refresh after every edit, though Refresh remains as a manual fallback.
 - **Click a row to select its components in the model** (US-204), via the
-  JSA `Selection` API (`model.updateSelection(entities, 'set')`) — replaces
+  JSA `Selection` API (`model.updateSelection(entities, 'replace')`) — replaces
   whatever is currently selected, the same way clicking an entity directly
   in the viewport does. A tag-group summary row selects every component
   instance in that group; clicking a `Mixed (N)` cell to expand/collapse it
@@ -212,7 +212,7 @@ repo no longer ships extensions as a drag-and-drop zip (see
 | `model.refresh()` | re-snapshot before a manual Refresh |
 | `model.getTagManager()` | resolve `tagId` → tag name |
 | `model.getMaterials()` → `Materials.findMaterialById(id)` | resolve `materialId` → material name |
-| `model.updateSelection(entities, mode)` | click-to-select (US-204), `mode: 'set'` |
+| `model.updateSelection(entities, mode)` | click-to-select (US-204), `mode: 'replace'` |
 | `ComponentInstance.name` / `.tagId` / `.materialId` / `.guid` / `.description` / `.definition` | per-component built-in fields |
 | `ComponentInstance.transform` (not `.transformation`) | Transform → X/Y/Z (US-206) |
 | `ComponentInstance.bounds` → `BoundingBox.width`/`.height`/`.depth` | Size → Width/Height/Depth (US-206) |
@@ -271,7 +271,7 @@ with real simulated DOM events for the rest of one continuous "session"
 scenario below reuses the same loaded instance rather than re-importing):
 - **Click-to-select (US-204):** a real `click` on a rendered row asserts
   `model.updateSelection` was called with exactly that row's entities and
-  `mode: 'set'`, and that clicking a different row replaces rather than
+  `mode: 'replace'`, and that clicking a different row replaces rather than
   adds to the selection.
 - **Column picker (US-205):** adding a column via `add-column-select`,
   reordering it with a chip's move-left button, and removing it via its ✕.

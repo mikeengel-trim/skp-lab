@@ -1118,7 +1118,7 @@ function selectRowInModel(rowComponents) {
   if (!model) return;
   const entities = getSelectionEntities(rowComponents);
   if (entities.length === 0) return;
-  model.updateSelection(entities, 'set').catch((e) => {
+  model.updateSelection(entities, 'replace').catch((e) => {
     console.error('[Component Table] failed to select components in the model', e);
     showError(`Could not select components in the model: ${e.message}`);
   });
