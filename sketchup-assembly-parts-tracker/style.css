@@ -44,6 +44,7 @@ td { padding: 0 8px; border-bottom: 1px solid var(--border); height: 52px; }
 tbody tr { cursor: pointer; }
 tbody tr:hover { background: var(--raised); }
 tbody tr.selected { background: var(--sel); box-shadow: inset 3px 0 0 var(--info); }
+td.readonly { padding: 0 16px; color: var(--muted); }
 td.id { padding: 0 16px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; color: var(--muted); white-space: nowrap; }
 td.mono input { font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
 td.status { position: relative; }

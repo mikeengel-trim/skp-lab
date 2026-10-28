@@ -10,6 +10,9 @@ mock (Modus look, simplified); runs wherever JSA runs (Desktop, iPad, Web).
 - **Table** — Unique ID, Part #, Material, Cut Length, Supplier, Installer,
   Status. Status chips with counts, a search box, and an Installed progress bar.
 - **Row click → highlight** — `model.updateSelection([entity], 'replace')`.
+- **Finish** — read-only column showing the material applied to the group/
+  component in SketchUp (read live from the entity, never stored). Blank (—)
+  when no material is applied. Separate from the editable Material column.
 - **Edits persist** — values are stored in the `AssemblyParts` attribute
   dictionary on each entity (`partNumber`, `material`, `cutLength`,
   `supplier`, `installer`, `status`), written inside `performOperation`
@@ -27,8 +30,10 @@ mock (Modus look, simplified); runs wherever JSA runs (Desktop, iPad, Web).
 - Defaults when unset: Part # = entity name, Material = applied material name,
   Status = Pending.
 - "Add Part" and per-row delete from the mock are intentionally omitted.
-- Unverified in a live SketchUp session: attribute read/write on entities from
-  `entities.get()`, and `entity.id` formatting. Check these first.
+- Verified on iPad: the panel loads, attribute read/write works, and edited
+  values persist after saving and reopening the model. Row selection needed
+  `'replace'` (not `'set'`) as the `updateSelection` mode; re-test highlight
+  after that fix.
 
 ## Load
 

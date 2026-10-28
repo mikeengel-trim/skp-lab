@@ -51,6 +51,7 @@ async function loadParts() {
       uniqueId: `P-${String(entity.id).padStart(3, '0')}`,
       partNumber: readAttr(entity, 'partNumber', entity.name || ''),
       material: readAttr(entity, 'material', modelMaterial),
+      finish: modelMaterial,   // read-only: the material applied to the entity
       cutLength: readAttr(entity, 'cutLength'),
       supplier: readAttr(entity, 'supplier'),
       installer: readAttr(entity, 'installer'),
@@ -64,7 +65,7 @@ function visibleParts() {
   return parts.filter((p) => {
     if (filter !== 'All' && p.status !== filter) return false;
     if (!q) return true;
-    return [p.uniqueId, p.partNumber, p.material, p.cutLength, p.supplier, p.installer]
+    return [p.uniqueId, p.partNumber, p.material, p.finish, p.cutLength, p.supplier, p.installer]
       .join(' ').toLowerCase().includes(q);
   });
 }
@@ -102,6 +103,13 @@ function selectCell(part, key, options) {
   return td;
 }
 
+function finishCell(part) {
+  const td = document.createElement('td');
+  td.className = 'readonly';
+  td.textContent = part.finish || '\u2014';
+  return td;
+}
+
 function render() {
   const shown = visibleParts();
   const tbody = el('rows');
@@ -117,6 +125,7 @@ function render() {
       idCell,
       textCell(part, 'partNumber', true),
       selectCell(part, 'material', BASE_MATERIALS),
+      finishCell(part),
       textCell(part, 'cutLength', true),
       textCell(part, 'supplier'),
       textCell(part, 'installer'),
