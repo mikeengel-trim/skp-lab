@@ -48,9 +48,39 @@
       --c-warn: #e3a84f;
       --c-warn-bg: rgba(227, 168, 79, 0.12);
       --c-live: #6bd08a;
+      --c-header-fade: rgba(0, 0, 0, 0.55);
+      --c-chip-bg: rgba(0, 0, 0, 0.35);
+      --c-banner-error-text: #ffd7dc;
+      --c-banner-warn-text: #ffe6bf;
+      color-scheme: dark;
       --radius-sm: 4px;
       --radius-md: 8px;
       --font-sans: "Open Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    }
+    /* Light theme — only the colors change; layout is shared. Applied via
+       <html data-theme="light">; dark (above) is the default. The Three.js
+       scene background/grid/lighting can't read CSS, so applyTheme() in the
+       script mirrors these choices in its SCENE_THEMES table. */
+    :root[data-theme="light"] {
+      --c-surface: #eef0f4;
+      --c-surface-raised: #ffffff;
+      --c-surface-panel: #f7f8fa;
+      --c-border: #d3d8e0;
+      --c-text-primary: #1b1f27;
+      --c-text-secondary: #4b5360;
+      --c-text-tertiary: #667085;
+      --c-accent: #1f78c8;
+      --c-accent-hover: #1666ad;
+      --c-error: #c9283e;
+      --c-error-bg: rgba(201, 40, 62, 0.10);
+      --c-warn: #a86a0a;
+      --c-warn-bg: rgba(168, 106, 10, 0.12);
+      --c-live: #1f8f4a;
+      --c-header-fade: rgba(255, 255, 255, 0.75);
+      --c-chip-bg: rgba(255, 255, 255, 0.65);
+      --c-banner-error-text: #7a1626;
+      --c-banner-warn-text: #5c3a05;
+      color-scheme: light;
     }
     * { box-sizing: border-box; }
     /* One global override rather than patching each hideable element's own
@@ -80,7 +110,7 @@
       position: absolute; top: 0; left: 0; right: 0;
       display: flex; align-items: center; gap: 10px;
       padding: 10px 14px;
-      background: linear-gradient(to bottom, rgba(0,0,0,0.55), transparent);
+      background: linear-gradient(to bottom, var(--c-header-fade), transparent);
       pointer-events: none;
     }
     .viewport-header .model-name { font-size: 13px; font-weight: 600; }
@@ -89,8 +119,8 @@
       background: var(--c-surface-raised); color: var(--c-text-secondary);
       border: 1px solid var(--c-border);
     }
-    .viewport-header .status-pill.connected { color: var(--c-live); border-color: rgba(107,208,138,0.4); }
-    .viewport-header .status-pill.error { color: var(--c-error); border-color: rgba(240,87,107,0.4); }
+    .viewport-header .status-pill.connected { color: var(--c-live); border-color: color-mix(in srgb, var(--c-live) 40%, transparent); }
+    .viewport-header .status-pill.error { color: var(--c-error); border-color: color-mix(in srgb, var(--c-error) 40%, transparent); }
 
     .live-indicator {
       display: flex; align-items: center; gap: 5px;
@@ -108,8 +138,8 @@
       padding: 10px 12px; border-radius: var(--radius-md);
       font-size: 12.5px; line-height: 1.5;
     }
-    .banner.banner-error { background: var(--c-error-bg); border: 1px solid rgba(240,87,107,0.35); color: #ffd7dc; }
-    .banner.banner-warn { background: var(--c-warn-bg); border: 1px solid rgba(227,168,79,0.35); color: #ffe6bf; }
+    .banner.banner-error { background: var(--c-error-bg); border: 1px solid color-mix(in srgb, var(--c-error) 35%, transparent); color: var(--c-banner-error-text); }
+    .banner.banner-warn { background: var(--c-warn-bg); border: 1px solid color-mix(in srgb, var(--c-warn) 35%, transparent); color: var(--c-banner-warn-text); }
     .banner .banner-text { flex: 1; }
     .banner .banner-close { cursor: pointer; color: inherit; opacity: 0.7; font-weight: 700; }
     .banner .banner-close:hover { opacity: 1; }
@@ -125,7 +155,7 @@
       position: absolute; left: 12px; bottom: 10px;
       display: flex; align-items: center; gap: 4px;
       padding: 3px 9px; border-radius: 9999px;
-      background: rgba(0, 0, 0, 0.35); color: var(--c-text-tertiary);
+      background: var(--c-chip-bg); color: var(--c-text-tertiary);
       font-size: 10.5px; letter-spacing: 0.01em;
       pointer-events: none; /* never steals an OrbitControls drag in the corner */
     }
@@ -242,6 +272,7 @@
       <div class="rules-header">
         <button class="btn-icon" id="panel-collapse-btn" title="Collapse panel">»</button>
         <h1>Color Rules</h1>
+        <button class="btn-icon" id="theme-toggle-btn" title="Switch to light mode" aria-label="Switch to light mode">☀</button>
         <button class="btn-icon" id="refresh-btn" title="Re-read the model now" disabled>⟳</button>
       </div>
 
@@ -768,9 +799,32 @@ async function collectGeometryByAttributeChain(model) {
   };
 }
 
+// ─── Theme (dark / light) ───────────────────────────────────────────────
+//
+// The page chrome is themed purely in CSS (:root[data-theme="light"]); this
+// table covers the pieces CSS can't reach — the Three.js scene background,
+// the floor grid, and the hemisphere light's ground bounce. Rule colors
+// themselves are user-picked and deliberately NOT themed, so a rule's blue
+// is the same blue in both modes.
+const THEME_STORAGE_KEY = 'instance-color-rules:theme';
+const SCENE_THEMES = {
+  dark:  { background: 0x16191e, gridMajor: 0x3a4048, gridMinor: 0x262b32, ground: 0x22252b },
+  light: { background: 0xeef0f4, gridMajor: 0xb4bbc7, gridMinor: 0xd3d8e0, ground: 0xcfd3da },
+};
+
+function loadTheme() {
+  try {
+    return localStorage.getItem(THEME_STORAGE_KEY) === 'light' ? 'light' : 'dark';
+  } catch (e) {
+    return 'dark'; // opaque origin / private mode: default, just not remembered
+  }
+}
+
+let theme = loadTheme();
+
 // ─── Three.js scene ─────────────────────────────────────────────────────
 
-let renderer, scene, camera, controls, resizeObserver;
+let renderer, scene, camera, controls, resizeObserver, hemiLight;
 let ruleMeshes = new Map(); // key ('else' or a rule id) -> THREE.Mesh
 
 function initScene() {
@@ -782,7 +836,7 @@ function initScene() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x16191e);
+  scene.background = new THREE.Color(SCENE_THEMES[theme].background);
 
   camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1e7);
   camera.up.set(0, 1, 0);
@@ -791,7 +845,8 @@ function initScene() {
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
 
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x22252b, 0.9));
+  hemiLight = new THREE.HemisphereLight(0xffffff, SCENE_THEMES[theme].ground, 0.9);
+  scene.add(hemiLight);
   const sun = new THREE.DirectionalLight(0xffffff, 0.85);
   sun.position.set(1, 1.6, 0.8);
   scene.add(sun);
@@ -915,7 +970,7 @@ function frameCamera(min, max) {
 
 function addFloorGrid(min, max) {
   const size = Math.max(max[0] - min[0], max[2] - min[2], 1);
-  const grid = new THREE.GridHelper(size * 1.6, 24, 0x3a4048, 0x262b32);
+  const grid = new THREE.GridHelper(size * 1.6, 24, SCENE_THEMES[theme].gridMajor, SCENE_THEMES[theme].gridMinor);
   grid.name = 'floor-grid';
   grid.position.y = min[1];
   scene.add(grid);
@@ -1193,7 +1248,40 @@ function loadPanelCollapsed() {
   }
 }
 
+function applyTheme(next, { persist = true } = {}) {
+  theme = next === 'light' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = theme;
+
+  const toggle = el('theme-toggle-btn');
+  const target = theme === 'light' ? 'dark' : 'light';
+  toggle.textContent = theme === 'light' ? '☾' : '☀'; // shows what you'll switch TO
+  toggle.title = `Switch to ${target} mode`;
+  toggle.setAttribute('aria-label', toggle.title);
+
+  if (scene) {
+    const palette = SCENE_THEMES[theme];
+    scene.background = new THREE.Color(palette.background);
+    hemiLight.groundColor.setHex(palette.ground);
+    // The floor grid bakes its colors into its geometry, so rather than
+    // patching it, rebuild the meshes + grid from the cached read — the
+    // same cheap, JSA-free path a rule edit takes. Camera isn't reframed.
+    if (lastChainEntries) recolorAndRender();
+  }
+
+  if (persist) {
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch (e) {
+      // Same opaque-origin/private-mode caveat as the other localStorage calls.
+    }
+  }
+}
+
 function wireStaticRuleControls() {
+  el('theme-toggle-btn').addEventListener('click', () => {
+    applyTheme(theme === 'light' ? 'dark' : 'light');
+  });
+
   el('panel-collapse-btn').addEventListener('click', () => {
     setPanelCollapsed(!el('rules-panel').classList.contains('collapsed'));
   });
@@ -1380,6 +1468,7 @@ function wireUi() {
   wireStaticRuleControls();
   renderRulesList();
   setPanelCollapsed(loadPanelCollapsed());
+  applyTheme(theme, { persist: false }); // syncs <html data-theme> + button; scene (not built yet) reads `theme` itself
 }
 
 async function init() {

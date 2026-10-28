@@ -412,6 +412,19 @@ Anything that matches no rule anywhere in its ancestry falls back to the
 **Else** color (Gray by default) — same role the old tag-based version's
 fixed "Untagged" gray played, just user-editable now instead of hardcoded.
 
+**Dark / light mode.** A ☀/☾ button in the panel header (next to Refresh,
+still reachable when the panel is collapsed) toggles between the original
+dark theme (default) and a light one; the choice persists to `localStorage`
+(`instance-color-rules:theme`). The page chrome is themed entirely with CSS
+variables (`:root[data-theme="light"]` overrides); the Three.js scene
+background, floor grid and hemisphere-light ground color can't read CSS, so
+they come from the `SCENE_THEMES` table in the script and are re-applied on
+toggle (grid rebuilt via the same cached-geometry path a rule edit uses — no
+JSA re-read, camera not reframed). Rule and Else colors are user-picked and
+never themed. Checked in a browser for the chrome, toggle and persistence;
+the 3D scene with real geometry in light mode has not been seen in a live
+SketchUp session.
+
 Both rules and the Else color/visibility persist to `localStorage`
 (`instance-color-rules:v1`) so they survive closing and reopening the
 panel. They do **not** sync across devices or SketchUp sessions — this is
