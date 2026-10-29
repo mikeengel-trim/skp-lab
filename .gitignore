@@ -5,3 +5,7 @@ build/
 *.zip
 .env
 sketchup-component-tag-table-us204/
+
+# Install zips are committed (built by scripts/build-zips.py)
+!zips/
+!zips/*.zip

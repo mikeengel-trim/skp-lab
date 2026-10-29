@@ -1,0 +1,6 @@
+#!/bin/sh
+# Keep zips/ in sync with the extension sources: rebuild and stage the zips
+# so every commit (and therefore every push) carries current ones.
+cd "$(git rev-parse --show-toplevel)" || exit 1
+python3 scripts/build-zips.py >/dev/null || exit 1
+git add -A zips

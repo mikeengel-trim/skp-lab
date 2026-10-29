@@ -189,15 +189,10 @@ the same debounced path rule-text edits already used.
 
 ## Install
 
-Drag `tag-color-viewer.zip` onto SketchUp's Extension Manager (any
-platform).
-
-To rebuild the zip after an edit:
-
-```bash
-cd sketchup-tag-color-viewer
-zip -r tag-color-viewer.zip manifest.json index.html tag-color-viewer.svg
-```
+Drag [`zips/tag-color-viewer.zip`](../zips/tag-color-viewer.zip) onto
+SketchUp's Extension Manager (any platform). It's rebuilt automatically on
+every commit; to rebuild by hand run `python3 scripts/build-zips.py` from the
+repo root.
 
 ---
 
@@ -212,7 +207,6 @@ sketchup-tag-color-viewer/
 │   ├── verify.mjs
 │   ├── verify-dom.mjs
 │   └── package.json
-└── tag-color-viewer.zip       # built artifact — the actual install target
 ```
 
 Everything ships in one `index.html`. **Do not** split the script into a

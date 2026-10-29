@@ -30,7 +30,8 @@ at runtime; shared knowledge lives in [docs/](docs).
 - `sketchup-*/` — one folder per extension.
 - `_template-extension/` — starting point for a new extension.
 - `docs/` — conventions and gotchas that apply across extensions.
-- `scripts/` — shared tooling usable by any extension.
+- `scripts/` — shared tooling usable by any extension, including `build-zips.py`.
+- `zips/` — install zips, one per extension, rebuilt on every commit by a pre-commit hook (run `git config core.hooksPath .githooks` once per clone). Use these to load on the web.
 
 ## Conventions
 

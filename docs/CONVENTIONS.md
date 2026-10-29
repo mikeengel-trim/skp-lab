@@ -19,6 +19,11 @@ paths. Reference the SDK from `_template-extension/index.html` for the
 current script URL (`cdn.habitat.sketchup.com`) rather than hardcoding it
 elsewhere, since it can change between JSA versions.
 
+Zips for the web: the web client loads an extension from a zip or an
+individual manifest, so `zips/<id>.zip` is built for each extension by
+`scripts/build-zips.py` and kept current by a pre-commit hook (see
+[../scripts/README.md](../scripts/README.md)). Don't hand-edit them.
+
 ## Connect before anything else
 
 Call `SketchUpApi.connect()` once at startup, before doing anything else with
