@@ -5,6 +5,7 @@
   "description": "A floating, resizable table that counts every component in the model, grouped and filtered by user-chosen attribute columns (tag, material, and more), matching Instance Color Rules' filter pattern.",
   "version": "0.1.0",
   "creator": "",
+  "baseUrl": "/",
   "mainFile": "index.html",
   "window": {
     "type": "floating",
