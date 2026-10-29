@@ -5,7 +5,7 @@
   "description": "Defines a new enclosed space (a named, tagged box) and places it in the model.",
   "version": "1.0.0",
   "creator": "",
-  "baseUrl": "",
+  "baseUrl": "/",
   "mainFile": "index.html",
   "window": {
     "type": "sidebar",
